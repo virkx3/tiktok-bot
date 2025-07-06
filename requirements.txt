@@ -1,1 +1,0 @@
-npm i puppeteer-extra puppeteer-extra-plugin-stealth puppeteer node-telegram-bot-api dotenv axios https-proxy-agent socks-proxy-agent
