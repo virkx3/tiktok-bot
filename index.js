@@ -1,80 +1,83 @@
-// index.js
-import dotenv from 'dotenv';
-dotenv.config();
+require("dotenv").config();
+const { getLatestVideos } = require("./scrape");
+const { shareVideo } = require("./share");
+const fs = require("fs");
+const path = require("path");
+const fetch = require("node-fetch");
 
-import fs from 'fs';
-import { shareVideo } from './share.js';
-import { scrapeUserVideos } from './scrape.js';
-import { getProxy } from './proxy.js';
-import fetch from 'node-fetch';
+const INTERVAL_MINUTES = parseInt(process.env.INTERVAL_MINUTES) || 5;
+const TELEGRAM_USER_ID = process.env.TELEGRAM_USER_ID;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const sharedFilePath = path.join(__dirname, "shared.json");
 
-const TARGET_USERS = ['its.sahiba2233', 'iamvirk'];
-const INTERVAL_MINUTES = 5;
-const RESHARE_COOLDOWN = 2 * 60 * 60 * 1000; // 2 hours
-
-const shared = fs.existsSync('shared.json') ? JSON.parse(fs.readFileSync('shared.json')) : {};
-const log = (msg) => {
-  const line = `[${new Date().toISOString()}] ${msg}`;
-  console.log(line);
-  fs.appendFileSync('log.txt', line + '\n');
-  telegramLog(msg);
+const sendTelegramLog = async (message) => {
+  try {
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_USER_ID,
+        text: message,
+      }),
+    });
+  } catch (e) {
+    console.error("❌ Telegram error:", e.message);
+  }
 };
 
-const telegramLog = async (text) => {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_USER_ID;
-  if (!token || !chatId) return;
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text })
-  });
+const loadShared = () => {
+  try {
+    return JSON.parse(fs.readFileSync(sharedFilePath, "utf8"));
+  } catch {
+    return [];
+  }
+};
+
+const saveShared = (data) => {
+  fs.writeFileSync(sharedFilePath, JSON.stringify(data, null, 2));
 };
 
 const getShareTargetCount = (likes) => {
   if (likes < 100) return 0;
-  if (likes < 1000) return rand(30, 50);
-  if (likes <= 5000) return rand(50, 100);
-  return rand(100, 150);
+  if (likes < 1000) return 50;
+  if (likes <= 5000) return 100;
+  return 150;
 };
 
-const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const runBot = async () => {
+  console.log("✅ Bot started");
+  await sendTelegramLog("🚀 TikTok Share Bot started!");
 
-async function mainLoop() {
-  for (const username of TARGET_USERS) {
-    const videos = await scrapeUserVideos(username);
-    for (const video of videos.slice(0, 10)) {
-      const key = video.id;
-      const lastShared = shared[key];
-      const now = Date.now();
+  const usernames = ["its.sahiba2233", "iamvirk"];
+  let shared = loadShared();
 
-      if (video.likes < 100) {
-        log(`Skipped ${key} - not enough likes (${video.likes})`);
-        continue;
-      }
-      if (video.shares >= 150) {
-        log(`Skipped ${key} - already has ${video.shares} shares`);
-        continue;
-      }
-      if (lastShared && now - lastShared < RESHARE_COOLDOWN) {
-        log(`Skipped ${key} - shared recently`);
-        continue;
-      }
+  for (const username of usernames) {
+    console.log(`🔍 Scraping: ${username}`);
+    const videos = await getLatestVideos(username);
+    for (const video of videos) {
+      if (shared.includes(video.url)) continue;
 
-      const shareCount = getShareTargetCount(video.likes);
-      const proxy = await getProxy();
-      const success = await shareVideo(video, shareCount, proxy);
+      const shares = getShareTargetCount(video.likes);
+      if (shares === 0) continue;
 
-      if (success) {
-        shared[key] = Date.now();
-        fs.writeFileSync('shared.json', JSON.stringify(shared, null, 2));
-        log(`Shared ${key} with ${shareCount} shares`);
+      await sendTelegramLog(`📹 Sharing ${video.url} (${video.likes} likes → ${shares} shares)`);
+
+      const result = await shareVideo(video.url, shares);
+      if (result) {
+        shared.push(video.url);
+        saveShared(shared);
+        await sendTelegramLog(`✅ Shared: ${video.url}`);
       } else {
-        log(`Failed to share ${key}`);
+        await sendTelegramLog(`⚠️ Failed to share: ${video.url}`);
       }
     }
   }
-}
+};
 
-mainLoop();
-setInterval(mainLoop, INTERVAL_MINUTES * 60 * 1000);
+runBot();
+setInterval(runBot, INTERVAL_MINUTES * 60 * 1000);
+
+process.on("unhandledRejection", err => {
+  console.error("💥 Unhandled error:", err);
+  sendTelegramLog(`💥 Bot crashed: ${err.message}`);
+});
