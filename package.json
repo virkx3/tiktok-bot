@@ -1,27 +1,19 @@
 {
   "name": "tiktok-auto-bot",
   "version": "1.0.0",
-  "description": "TikTok auto-share bot with Telegram logging, random share counts, and retry logic",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.61.0",
-    "puppeteer": "^22.8.2",
+    "axios": "^1.6.0",
+    "fs": "^0.0.1-security",
+    "puppeteer": "^21.11.0",
     "puppeteer-extra": "^3.3.4",
-    "puppeteer-extra-plugin-stealth": "^2.11.1"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "keywords": [
-    "tiktok",
-    "bot",
-    "automation",
-    "telegram",
-    "puppeteer"
-  ],
-  "author": "AutoBot Dev",
-  "license": "MIT"
+    "puppeteer-extra-plugin-stealth": "^2.11.1",
+    "node-telegram-bot-api": "^0.61.0",
+    "https-proxy-agent": "^7.0.2",
+    "socks-proxy-agent": "^7.0.1"
+  }
 }
