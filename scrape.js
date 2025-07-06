@@ -9,12 +9,13 @@ async function getLatestVideos(username) {
     console.log(`🔁 [${username}] Attempt ${attempt}...`);
 
     const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
 
-    try {
-      await page.setUserAgent(
-        "Mozilla/5.0 (Linux; Android 11; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Mobile Safari/537.36"
-      );
+const context = await browser.newContext({
+  userAgent:
+    "Mozilla/5.0 (Linux; Android 11; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Mobile Safari/537.36",
+});
+
+const page = await context.newPage();
 
       const profileUrl = `https://www.tiktok.com/@${username}`;
       await page.goto(profileUrl, { timeout: 60000 });
