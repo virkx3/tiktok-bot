@@ -1,80 +1,53 @@
-const playwright = require('playwright');
-const fs = require('fs');
-const sendLog = require('./telegram');
-const { getNextProxy } = require('./proxyManager');
+import { chromium } from 'playwright';
+import fs from 'fs';
+import { sendTelegramMessage, sendTelegramPhoto } from './telegram.js';
 
-const sharedCounts = {}; // Keep track of how many shares already done
+export default async function scrapeUser(username, proxy) {
+  const videoSelector = 'div[data-e2e="user-post-item-list"]';
+  const baseURL = `https://www.tiktok.com/@${username}`;
+  const browser = await chromium.launch({
+    headless: true,
+    proxy: proxy ? { server: `socks5://${proxy}` } : undefined,
+  });
 
-function getShareCount(likes) {
-  if (likes < 100) return 0;
-  if (likes < 1000) return 50;
-  if (likes < 5000) return 100;
-  return 150;
-}
+  const context = await browser.newContext();
+  const page = await context.newPage();
 
-async function scrape(username) {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const proxy = getNextProxy();
-    sendLog(`🌐 Using proxy: ${proxy || 'None'}`);
-    
-    const browser = await playwright.chromium.launch({
-      headless: true,
-      proxy: proxy ? { server: `socks5://${proxy}` } : undefined,
-    });
+  try {
+    await page.goto(baseURL, { waitUntil: 'load', timeout: 30000 });
+    await page.waitForSelector(videoSelector, { timeout: 15000 });
 
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    const videos = await page.$$eval(`${videoSelector} a`, (els) =>
+      els.map((el) => el.href)
+    );
 
-    try {
-      sendLog(`🔍 Scraping: ${username} (Attempt ${attempt})`);
-      const url = `https://www.tiktok.com/@${username}`;
-      await page.goto(url, { timeout: 30000, waitUntil: 'load' });
-      await page.waitForSelector('div[data-e2e="user-post-item-list"]', { timeout: 15000 });
+    for (let videoUrl of videos) {
+      await page.goto(videoUrl, { waitUntil: 'load', timeout: 30000 });
+      await page.waitForSelector('strong[data-e2e="like-count"]', { timeout: 10000 });
 
-      const videoLinks = await page.$$eval('div[data-e2e="user-post-item-list"] a', links =>
-        links.map(a => a.href).slice(0, 3)
-      );
+      const likeCountText = await page.$eval('strong[data-e2e="like-count"]', el => el.textContent || "0");
+      const likeCount = parseInt(likeCountText.replace(/[^0-9]/g, ''));
 
-      for (const link of videoLinks) {
-        await page.goto(link, { timeout: 30000 });
-        await page.waitForSelector('strong[data-e2e="like-count"]');
+      let shares = 0;
+      if (likeCount >= 100 && likeCount < 1000) shares = 50;
+      else if (likeCount >= 1000 && likeCount <= 5000) shares = 100;
+      else if (likeCount > 5000) shares = 150;
 
-        const likes = await page.$eval('strong[data-e2e="like-count"]', el =>
-          Number(el.textContent.replace(/[^\d]/g, ''))
-        );
-
-        const prevShares = sharedCounts[link] || 0;
-        const totalShares = getShareCount(likes);
-
-        const sharesToDo = totalShares - prevShares;
-        if (sharesToDo > 0) {
-          sendLog(`📈 ${link} has ${likes} likes, sharing ${sharesToDo} times`);
-          for (let i = 0; i < sharesToDo; i++) {
-            try {
-              await page.click('button[data-e2e="share-icon"]');
-              await page.waitForSelector('button[data-e2e="copy-link"]', { timeout: 10000 });
-              await page.click('button[data-e2e="copy-link"]');
-              await page.waitForTimeout(500);
-            } catch (err) {
-              sendLog(`⚠️ Share failed: ${err.message}`);
-              break;
-            }
-          }
-          sharedCounts[link] = totalShares;
-        } else {
-          sendLog(`✅ ${link} already shared ${prevShares} times`);
-        }
+      for (let i = 0; i < shares; i++) {
+        try {
+          await page.click('button[data-e2e="share-icon"]');
+          await page.click('button[data-e2e="copy-link"]');
+        } catch {}
       }
 
-      await browser.close();
-      break;
-    } catch (err) {
-      sendLog(`⚠️ Scraping error for ${username} (attempt ${attempt}): ${err.message}`);
-      const screenshotPath = `screenshot-${username}.png`;
-      await page.screenshot({ path: screenshotPath }).catch(() => {});
-      await browser.close();
+      await sendTelegramMessage(`📹 ${videoUrl}\n❤️ ${likeCount} likes\n🚀 Shared ${shares}x`);
     }
+  } catch (err) {
+    const screenshotPath = `/app/screenshot-${username}.png`;
+    await page.screenshot({ path: screenshotPath });
+    await sendTelegramPhoto(screenshotPath, `⚠️ Error scraping ${username}`);
+    throw err;
+  } finally {
+    await browser.close();
   }
 }
-
-module.exports = scrape;
