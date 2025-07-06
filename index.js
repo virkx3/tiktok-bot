@@ -1,50 +1,23 @@
-const scrapeVideos = require('./scrape');
-const shareVideo = require('./share');
-const sendTelegramLog = require('./telegram');
+const scrapeUserVideos = require('./scrape');
 const fs = require('fs');
 
-const usernames = ['its.sahiba2233', 'iamvirk'];
-const CHECK_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours
-let sharedData = {};
+const targets = ['its.sahiba2233', 'iamvirk'];
+const proxyListPath = './socks5.txt'; // you must have saved proxies here
 
-try {
-  sharedData = JSON.parse(fs.readFileSync('data.json'));
-} catch {
-  sharedData = {};
+function getRandomProxy() {
+  if (!fs.existsSync(proxyListPath)) return null;
+  const proxies = fs.readFileSync(proxyListPath, 'utf-8')
+    .split('\n')
+    .map(p => p.trim())
+    .filter(p => p && !p.includes('IN')); // skip India proxies
+  return proxies[Math.floor(Math.random() * proxies.length)] || null;
 }
 
-async function processUsername(username) {
-  const videos = await scrapeVideos(username);
-  if (!videos) return;
-
-  for (const { url, likes } of videos) {
-    const key = `${username}:${url}`;
-    const alreadyShared = sharedData[key] || 0;
-
-    let targetShares = 0;
-    if (likes >= 5000) targetShares = 150;
-    else if (likes >= 1000) targetShares = 100;
-    else if (likes >= 100) targetShares = 50;
-
-    const remainingShares = targetShares - alreadyShared;
-    if (remainingShares > 0) {
-      await sendTelegramLog(`📤 Sharing ${remainingShares}x: ${url}`);
-      const success = await shareVideo(url, remainingShares);
-      if (success) {
-        sharedData[key] = alreadyShared + remainingShares;
-        fs.writeFileSync('data.json', JSON.stringify(sharedData, null, 2));
-      }
-    }
+(async () => {
+  console.log("✅ Bot started");
+  for (const user of targets) {
+    const proxy = getRandomProxy();
+    console.log(`🌐 Using proxy: ${proxy || 'None'}`);
+    await scrapeUserVideos(user, proxy);
   }
-}
-
-async function startBot() {
-  await sendTelegramLog('✅ Bot started');
-  for (const username of usernames) {
-    await sendTelegramLog(`🔍 Scraping: ${username}`);
-    await processUsername(username);
-  }
-  setTimeout(startBot, CHECK_INTERVAL);
-}
-
-startBot();
+})();
