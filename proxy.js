@@ -1,20 +1,26 @@
 const fs = require('fs');
-const path = require('path');
+let proxies = [];
+let currentIndex = 0;
 
-// Load and parse proxies
 function loadProxies() {
-  const filePath = path.resolve(__dirname, 'proxy.txt');
-  if (!fs.existsSync(filePath)) {
-    console.log('❌ proxy.txt file not found');
-    return [];
+  try {
+    proxies = fs.readFileSync('./proxy.txt', 'utf-8')
+      .split('\n')
+      .map(p => p.trim())
+      .filter(p => p && !p.includes('IN') && !p.startsWith('#'));
+  } catch (e) {
+    console.warn('⚠️ Could not load proxy.txt:', e.message);
+    proxies = [];
   }
-
-  const lines = fs.readFileSync(filePath, 'utf-8')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.includes('IN') && line.includes(':'));
-
-  return lines;
 }
 
-const proxies = loadProxies();
+function getNextProxy() {
+  if (proxies.length === 0) loadProxies();
+  if (proxies.length === 0) return null;
+
+  const proxy = proxies[currentIndex];
+  currentIndex = (currentIndex + 1) % proxies.length;
+  return proxy;
+}
+
+module.exports = { getNextProxy };
