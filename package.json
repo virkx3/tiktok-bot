@@ -14,6 +14,6 @@
     "puppeteer-extra-plugin-stealth": "^2.11.1",
     "node-telegram-bot-api": "^0.61.0",
     "https-proxy-agent": "^7.0.2",
-    "socks-proxy-agent": "^7.0.1"
+    "socks-proxy-agent": "^6.2.1"
   }
 }
