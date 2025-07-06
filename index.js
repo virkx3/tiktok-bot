@@ -2,28 +2,29 @@ require("dotenv").config();
 const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const TelegramBot = require("node-telegram-bot-api");
+const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
-const HttpsProxyAgent = require("https-proxy-agent");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+const { SocksProxyAgent } = require("socks-proxy-agent");
 
 puppeteer.use(StealthPlugin());
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 const telegramUserId = process.env.TELEGRAM_USER_ID;
-const proxyChannel = process.env.PROXY_CHANNEL;
 const usernames = process.env.TIKTOK_USERNAMES.split(",").map(u => u.trim());
 
 const loginUsername = "ssociaixzl3s";
 const loginPassword = "Virksaab@12345";
 
 const testedProxies = new Set();
+const cacheFile = "proxies.json";
 
-function log(message) {
-  const logMessage = `[${new Date().toISOString()}] ${message}`;
-  console.log(logMessage);
-  fs.appendFileSync("log.txt", logMessage + "\n");
-  if (telegramUserId) bot.sendMessage(telegramUserId, logMessage).catch(() => {});
+function log(msg) {
+  const time = `[${new Date().toISOString()}]`;
+  console.log(`${time} ${msg}`);
+  fs.appendFileSync("log.txt", `${time} ${msg}\n`);
+  if (telegramUserId) bot.sendMessage(telegramUserId, `${msg}`).catch(() => {});
 }
 
 function loadProcessed() {
@@ -36,6 +37,56 @@ function loadProcessed() {
 
 function saveProcessed(data) {
   fs.writeFileSync("processed.json", JSON.stringify(data, null, 2));
+}
+
+function detectProxyType(proxy) {
+  const port = parseInt(proxy.split(":")[1]);
+  return [1080, 1085, 9050, 9150, 1081, 9999, 7890].includes(port) ? "socks" : "http";
+}
+
+async function testProxy(proxy) {
+  const type = detectProxyType(proxy);
+  try {
+    const agent = type === "socks"
+      ? new SocksProxyAgent(`socks5://${proxy}`)
+      : new HttpsProxyAgent(`http://${proxy}`);
+    const res = await axios.get("https://www.tiktok.com", {
+      httpsAgent: agent,
+      timeout: 8000,
+    });
+    return res.status === 200;
+  } catch {
+    return false;
+  }
+}
+
+function loadCachedProxies() {
+  try {
+    const cache = JSON.parse(fs.readFileSync(cacheFile));
+    return cache.proxies || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedProxies(proxies) {
+  fs.writeFileSync(cacheFile, JSON.stringify({ proxies }, null, 2));
+}
+
+async function getGitHubProxies() {
+  try {
+    const res = await axios.get("https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks5.txt");
+    const proxies = res.data
+      .split("\n")
+      .map(p => p.trim())
+      .filter(p => p.match(/\b(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}\b/));
+    saveCachedProxies(proxies);
+    log(`📦 GitHub fallback proxies cached: ${proxies.length}`);
+    return proxies;
+  } catch (err) {
+    log("❌ Failed to load proxies from GitHub: " + err.message);
+    return loadCachedProxies();
+  }
 }
 
 async function getLatestProxiesFromTelegram() {
@@ -62,44 +113,31 @@ async function getLatestProxiesFromTelegram() {
   }
 }
 
-async function testProxy(proxy) {
-  try {
-    const agent = new HttpsProxyAgent(`http://${proxy}`);
-    const res = await axios.get("https://www.tiktok.com", {
-      httpsAgent: agent,
-      timeout: 8000,
-    });
-    return res.status === 200;
-  } catch {
-    return false;
-  }
-}
-
 async function getWorkingProxy() {
-  const proxies = await getLatestProxiesFromTelegram();
+  let proxies = await getLatestProxiesFromTelegram();
   if (!proxies.length) {
-    log("❌ No new proxies found from Telegram");
-    return null;
+    log("⚠️ No Telegram proxies, loading GitHub fallback...");
+    proxies = await getGitHubProxies();
   }
 
   for (let proxy of proxies) {
+    if (testedProxies.has(proxy)) continue;
     testedProxies.add(proxy);
-    log(`🌐 Testing proxy: ${proxy}`);
+    const type = detectProxyType(proxy);
+    log(`🌐 Testing ${type.toUpperCase()} proxy: ${proxy}`);
     if (await testProxy(proxy)) {
-      log(`✅ Working proxy found: ${proxy}`);
+      log(`✅ Working proxy: ${proxy} (${type})`);
       return proxy;
     }
   }
 
-  log("❌ No working proxies after testing all");
+  log("❌ No working proxies from Telegram or GitHub");
   return null;
 }
 
 async function scrollActivity(page) {
   for (let i = 0; i < 5; i++) {
-    await page.evaluate(() => {
-      window.scrollBy(0, 100 + Math.random() * 300);
-    });
+    await page.evaluate(() => window.scrollBy(0, 100 + Math.random() * 300));
     await page.waitForTimeout(1000 + Math.random() * 2000);
   }
 }
@@ -137,7 +175,7 @@ async function startBot() {
 
   const browser = await puppeteer.launch({
     headless: true,
-    args: [`--proxy-server=http://${proxy}`, "--no-sandbox", "--disable-setuid-sandbox"]
+    args: [`--proxy-server=${detectProxyType(proxy) === "socks" ? `socks5://${proxy}` : `http://${proxy}`}`, "--no-sandbox"]
   });
 
   const context = await browser.createIncognitoBrowserContext();
@@ -176,7 +214,7 @@ async function startBot() {
           await page.click('span[data-e2e="like-icon"]');
           log("❤️ Liked");
         } catch {
-          log("⚠️ Like button not found or already liked");
+          log("⚠️ Already liked or like button not found");
         }
 
         let likeCount = await page.evaluate(() => {
@@ -201,12 +239,12 @@ async function startBot() {
           }
         }
 
-        log(`✅ Shared ${shares} times (likes: ${likeCount})`);
+        log(`✅ Shared ${shares}x (likes: ${likeCount})`);
         processed[videoId] = { liked: true, shared: true };
         saveProcessed(processed);
       }
     } catch (err) {
-      log(`❌ Error with ${username}: ${err.message}`);
+      log(`❌ Error with @${username}: ${err.message}`);
     }
   }
 
