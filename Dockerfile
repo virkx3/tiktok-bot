@@ -1,17 +1,14 @@
-# Use official Puppeteer image with Chromium
-FROM ghcr.io/puppeteer/puppeteer:latest
+FROM mcr.microsoft.com/playwright:v1.43.1-jammy
 
-# Set working directory
 WORKDIR /app
 
-# Copy only package files first
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy rest of the files
 COPY . .
 
-# Run the bot
+# Add Docker health check
+HEALTHCHECK --interval=1m --timeout=10s \
+  CMD node -e "require('fs').statSync('shared.json')" || exit 1
+
 CMD ["npm", "start"]
