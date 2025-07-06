@@ -1,14 +1,12 @@
 {
-  "name": "tiktok-share-bot",
+  "name": "tiktok-railway-bot",
   "version": "1.0.0",
-  "type": "module",
-  "description": "TikTok auto-share bot with scraping, proxy, Telegram, and Docker",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "dotenv": "^16.0.3",
+    "dotenv": "^16.3.1",
     "node-fetch": "^2.6.7",
     "playwright": "^1.43.1"
   }
