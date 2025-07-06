@@ -11,6 +11,6 @@
     "dotenv": "^16.0.3",
     "fs": "^0.0.1-security",
     "node-fetch": "^2.6.7",
-    "puppeteer": "^21.3.8"
+    "puppeteer": "^22.8.2"
   }
 }
