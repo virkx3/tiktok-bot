@@ -1,64 +1,44 @@
-// scrape.js
-import { chromium } from 'playwright';
+const { chromium } = require("playwright");
 
-export async function scrapeUserVideos(username) {
+async function getLatestVideos(username) {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
-  const profileUrl = `https://www.tiktok.com/@${username}`;
   try {
-    await page.goto(profileUrl, { timeout: 30000, waitUntil: 'networkidle' });
-    await page.waitForTimeout(3000);
+    await page.goto(`https://www.tiktok.com/@${username}`, { timeout: 60000 });
+
+    await page.waitForSelector("div[data-e2e='user-post-item-list']", { timeout: 20000 });
 
     const videos = await page.evaluate(() => {
-  const items = Array.from(document.querySelectorAll('div[data-e2e="user-post-item"] a'));
-  return items.slice(0, 10).map(a => {
-    const url = a.href;
-    const idMatch = url.match(/\/video\/(\d+)/);
-    return {
-      id: idMatch ? idMatch[1] : url,
-      url
-    };
-  });
-});
+      const anchors = Array.from(document.querySelectorAll("a")).filter(a =>
+        a.href.includes("/video/") && a.querySelector("img")
+      );
 
-    for (const video of videos) {
-      try {
-        const videoPage = await browser.newPage();
-        await videoPage.goto(video.url, { timeout: 30000, waitUntil: 'domcontentloaded' });
-        await videoPage.waitForTimeout(1500);
+      return anchors.slice(0, 5).map((a) => {
+        const likesElement = a.querySelector("strong");
+        let likes = 0;
 
-        const { likes, shares } = await videoPage.evaluate(() => {
-          const getCount = (selector) => {
-            const el = document.querySelector(selector);
-            if (!el) return 0;
-            const text = el.innerText.replace(/[^\\d\\.kKmM]/g, '').toLowerCase();
-            if (text.endsWith('k')) return Math.round(parseFloat(text) * 1000);
-            if (text.endsWith('m')) return Math.round(parseFloat(text) * 1000000);
-            return parseInt(text) || 0;
-          };
+        if (likesElement) {
+          const text = likesElement.innerText.trim().toLowerCase();
+          if (text.endsWith("k")) likes = parseFloat(text) * 1000;
+          else if (text.endsWith("m")) likes = parseFloat(text) * 1000000;
+          else likes = parseInt(text);
+        }
 
-          return {
-            likes: getCount('[data-e2e="like-count"]'),
-            shares: getCount('[data-e2e="share-count"]')
-          };
-        });
+        return {
+          url: a.href,
+          likes: Math.floor(likes),
+        };
+      });
+    });
 
-        video.likes = likes;
-        video.shares = shares;
-        await videoPage.close();
-      } catch (err) {
-        console.warn(`⚠️ Failed to extract metrics from ${video.url}`);
-        video.likes = 0;
-        video.shares = 0;
-      }
-    }
-
-    await browser.close();
     return videos;
   } catch (err) {
-    await browser.close();
-    console.error(`❌ Failed to load profile: ${profileUrl}`);
+    console.error(`❌ Scraping error for ${username}:`, err.message);
     return [];
+  } finally {
+    await browser.close();
   }
 }
+
+module.exports = { getLatestVideos };
