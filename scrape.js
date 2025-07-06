@@ -1,72 +1,39 @@
-const fs = require("fs");
-const path = require("path");
-const { chromium } = require("playwright");
-const getValidProxy = require("./proxy");
+const playwright = require('playwright');
+const { getWorkingProxy } = require('./proxy');
+const login = require('./tiktok-login');
 
-async function scrapeUser(username) {
-  const maxAttempts = 3;
+async function scrapeVideos(username) {
+  try {
+    const proxy = await getWorkingProxy();
+    const browser = await playwright.chromium.launch({
+      headless: true,
+      proxy: proxy ? { server: `socks5://${proxy}` } : undefined,
+    });
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(`🔁 [${username}] Attempt ${attempt}...`);
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
-    let browser;
-    try {
-      const proxy = await getValidProxy();
+    await login(page);
 
-      browser = await chromium.launch({
-        headless: true,
-        proxy: proxy ? { server: proxy } : undefined,
-      });
+    await page.goto(`https://www.tiktok.com/@${username}`, { timeout: 60000 });
+    await page.waitForSelector('div[data-e2e="user-post-item-list"]', { timeout: 20000 });
 
-      const context = await browser.newContext({
-        userAgent:
-          "Mozilla/5.0 (Linux; Android 11; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Mobile Safari/537.36",
-      });
+    const videos = await page.$$eval('div[data-e2e="user-post-item"] a', links =>
+      links.map(link => ({
+        url: link.href,
+        likes: parseInt(
+          link.querySelector('[data-e2e="like-count"]')?.innerText.replace(/[^\d]/g, '') || '0',
+          10
+        )
+      }))
+    );
 
-      const page = await context.newPage();
-      await page.goto(`https://www.tiktok.com/@${username}`, {
-        timeout: 20000,
-        waitUntil: "domcontentloaded",
-      });
-
-      // Wait for video thumbnails to appear
-      await page.waitForSelector("div[data-e2e='user-post-item-list']", {
-        timeout: 20000,
-      });
-
-      const videoLinks = await page.$$eval(
-        "div[data-e2e='user-post-item-list'] a",
-        (anchors) => anchors.map((a) => a.href)
-      );
-
-      console.log(`📹 [${username}] Found ${videoLinks.length} videos`);
-
-      await browser.close();
-      return videoLinks;
-    } catch (err) {
-      console.error(
-        `⚠️ Scraping error for ${username} (attempt ${attempt}):`,
-        err.message
-      );
-
-      if (browser) {
-        const screenshotPath = path.join(
-          __dirname,
-          `screenshot-${username}.png`
-        );
-        const page = await browser.newPage().catch(() => null);
-        if (page) await page.screenshot({ path: screenshotPath }).catch(() => {});
-        console.log(`📸 Saved screenshot to ${screenshotPath}`);
-        await browser.close().catch(() => {});
-      }
-
-      // Wait a bit before retrying
-      await new Promise((res) => setTimeout(res, 2000));
-    }
+    await browser.close();
+    return videos;
+  } catch (err) {
+    console.error(`❌ Scraping error for ${username}: ${err.message}`);
+    return null;
   }
-
-  console.error(`❌ Failed scraping ${username} after ${maxAttempts} attempts.`);
-  return [];
 }
 
-module.exports = scrapeUser;
+module.exports = scrapeVideos;
