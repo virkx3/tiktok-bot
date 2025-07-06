@@ -32,7 +32,7 @@ function extractVideoId(url) {
 async function sharePost(page, url, likes, videoId) {
   try {
     await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
     log(`🎯 Targeting: ${url}`);
 
     const shareCount =
@@ -46,9 +46,9 @@ async function sharePost(page, url, likes, videoId) {
     for (let i = 0; i < shareCount; i++) {
       try {
         await page.click("button[data-e2e='share-button']");
-        await page.waitForTimeout(500);
+        await new Promise(resolve => setTimeout(resolve, 500));
         await page.click("button[data-e2e='copy-link']");
-        await page.waitForTimeout(1000);
+        await new Promise(resolve => setTimeout(resolve, 1000));
         shared++;
       } catch (e) {
         break;
@@ -76,41 +76,51 @@ async function startBot() {
     const profileUrl = `https://www.tiktok.com/@${username}`;
     log(`📲 Visiting: ${profileUrl}`);
 
-    try {
-      await page.goto(profileUrl, { waitUntil: "networkidle2", timeout: 60000 });
-      await page.waitForTimeout(3000);
+    const tryProfile = async () => {
+      try {
+        await page.goto(profileUrl, { waitUntil: "networkidle2", timeout: 60000 });
+        await new Promise(r => setTimeout(r, 3000));
 
-      const videoLinks = await page.evaluate(() =>
-        Array.from(document.querySelectorAll("a[href*='/video/']")).map(a => a.href)
-      );
+        const videoLinks = await page.evaluate(() =>
+          Array.from(document.querySelectorAll("a[href*='/video/']")).map(a => a.href)
+        );
 
-      const last10 = [...new Set(videoLinks)].slice(0, 10);
+        const last10 = [...new Set(videoLinks)].slice(0, 10);
 
-      for (const url of last10) {
-        const videoId = extractVideoId(url);
-        if (!videoId || processed[videoId]) {
-          log(`♻️ Skipped: ${url}`);
-          continue;
+        for (const url of last10) {
+          const videoId = extractVideoId(url);
+          if (!videoId || processed[videoId]) {
+            log(`♻️ Skipped: ${url}`);
+            continue;
+          }
+
+          await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+          await new Promise(r => setTimeout(r, 3000));
+
+          const likes = await page.evaluate(() => {
+            const el = document.querySelector("strong[data-e2e='like-count']");
+            return el ? parseInt(el.innerText.replace(/\D/g, "")) : 0;
+          });
+
+          await sharePost(page, url, likes, videoId);
         }
-
-        await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-        await page.waitForTimeout(3000);
-
-        const likes = await page.evaluate(() => {
-          const el = document.querySelector("strong[data-e2e='like-count']");
-          return el ? parseInt(el.innerText.replace(/\D/g, "")) : 0;
-        });
-
-        await sharePost(page, url, likes, videoId);
+      } catch (err) {
+        log(`❌ Error @${username}: ${err.message}`);
+        log(`🔁 Retrying @${username} instantly...`);
+        try {
+          await page.goto(profileUrl, { waitUntil: "networkidle2", timeout: 60000 });
+        } catch (e2) {
+          log(`❌ Second fail @${username}: ${e2.message}`);
+        }
       }
-    } catch (err) {
-      log(`❌ Error @${username}: ${err.message}`);
-    }
+    };
+
+    await tryProfile();
   }
 
   await browser.close();
-  log("✅ Cycle complete. Sleeping 2 hours...");
-  setTimeout(startBot, 2 * 60 * 60 * 1000);
+  log("✅ Cycle complete. Sleeping 5 minutes...");
+  setTimeout(startBot, 5 * 60 * 1000); // Retry after 5 minutes
 }
 
 startBot();
