@@ -1,40 +1,33 @@
-const { chromium } = require("playwright");
-const getProxy = require("./proxy");
+const playwright = require('playwright');
+const { getWorkingProxy } = require('./proxy');
+const login = require('./tiktok-login');
 
-const USERNAME = process.env.TIKTOK_USERNAME || "sociaixzl3s";
-const PASSWORD = process.env.TIKTOK_PASSWORD || "Virksaab@12345";
+async function shareVideo(url, count) {
+  for (let i = 0; i < count; i++) {
+    try {
+      const proxy = await getWorkingProxy();
+      const browser = await playwright.chromium.launch({
+        headless: true,
+        proxy: proxy ? { server: `socks5://${proxy}` } : undefined,
+      });
 
-async function shareVideo(videoUrl, shareCount = 1) {
-  const proxy = await getProxy();
+      const context = await browser.newContext();
+      const page = await context.newPage();
 
-  const browser = await chromium.launch({
-    headless: true,
-    proxy: proxy ? { server: proxy } : undefined,
-  });
+      await login(page);
 
-  const page = await browser.newPage();
+      await page.goto(url, { timeout: 60000 });
+      await page.waitForTimeout(3000);
+      await page.click('button[data-e2e="share-icon"]');
+      await page.waitForTimeout(1000);
+      await page.click('button:has-text("Copy link")'); // fallback if available
 
-  try {
-    await page.goto("https://www.tiktok.com/login/phone-or-email/email", { timeout: 60000 });
-
-    await page.fill('input[name="email"]', USERNAME);
-    await page.fill('input[name="password"]', PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForTimeout(5000);
-
-    for (let i = 0; i < shareCount; i++) {
-      console.log(`📤 Sharing attempt ${i + 1}...`);
-      await page.goto(videoUrl);
-      await page.waitForTimeout(2000);
+      await browser.close();
+    } catch (err) {
+      console.log(`⚠️ Share error: ${err.message}`);
     }
-
-    return true;
-  } catch (err) {
-    console.error("❌ Sharing error:", err.message);
-    return false;
-  } finally {
-    await browser.close();
   }
+  return true;
 }
 
-module.exports = { shareVideo };
+module.exports = shareVideo;
