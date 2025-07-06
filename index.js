@@ -139,17 +139,21 @@ async function getWorkingProxy() {
   return null;
 }
 
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
 async function scrollActivity(page) {
   for (let i = 0; i < 5; i++) {
     await page.evaluate(() => window.scrollBy(0, 100 + Math.random() * 300));
-    await page.waitForTimeout(1000 + Math.random() * 2000);
+    await sleep(1000 + Math.random() * 2000);
   }
 }
 
 async function loginIfNeeded(page) {
   try {
     await page.goto("https://www.tiktok.com", { waitUntil: "networkidle2" });
-    await page.waitForTimeout(5000);
+    await sleep(5000);
     if (await page.$("a[href='/login']")) {
       log("🔐 Session expired, logging in...");
       await page.goto("https://www.tiktok.com/login/phone-or-email/email");
@@ -239,7 +243,7 @@ async function startBot() {
             await page.click('button[data-e2e="share-button"]');
             await page.waitForSelector('div[data-e2e="copy-link"]', { timeout: 3000 });
             await page.click('div[data-e2e="copy-link"]');
-            await page.waitForTimeout(Math.floor(Math.random() * 4000) + 2000);
+            await sleep(Math.floor(Math.random() * 4000) + 2000);
           } catch {
             log("⚠️ Share failed");
             break;
