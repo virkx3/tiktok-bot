@@ -1,9 +1,7 @@
-FROM mcr.microsoft.com/playwright:v1.43.1-jammy
+FROM mcr.microsoft.com/playwright:v1.53.2-jammy
 
 WORKDIR /app
-
 COPY . .
 
 RUN npm install
-
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
