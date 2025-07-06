@@ -36,7 +36,6 @@ COPY . .
 
 # Set Puppeteer env vars
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 # Start the bot
 CMD ["npm", "start"]
