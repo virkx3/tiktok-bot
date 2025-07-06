@@ -8,9 +8,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "dotenv": "^16.0.3",
-    "fs": "^0.0.1-security",
-    "node-fetch": "^2.6.7",
-    "puppeteer": "^22.8.2"
-  }
+  "puppeteer": "^22.8.2",   // ✅ full version, not puppeteer-core
+  "dotenv": "^16.0.3",
+  "node-fetch": "^2.6.7"
 }
