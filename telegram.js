@@ -1,38 +1,22 @@
-import fs from 'fs/promises';
-import axios from 'axios';
+import TelegramBot from 'node-telegram-bot-api';
+import fs from 'fs';
 
-export async function loadProxies() {
-  const raw = await fs.readFile('proxy.txt', 'utf8');
-  const proxies = raw.split('\n').map(p => p.trim()).filter(Boolean);
-  const validProxies = [];
+const token = '7596985533:AAHjRG1gvHkm2bM6oSJtgOMffHSM8TcgQkw';
+const userId = 1098100073;
+const bot = new TelegramBot(token, { polling: false });
 
-  for (const proxy of proxies) {
-    try {
-      const browser = await import('playwright').then(p => p.chromium.launch({
-        headless: true,
-        proxy: { server: `socks5://${proxy}` }
-      }));
-      const context = await browser.newContext();
-      const page = await context.newPage();
-
-      await page.goto('https://www.tiktok.com', { timeout: 15000 });
-      const ip = await page.evaluate(() => fetch('https://api.ipify.org').then(res => res.text()));
-      const geo = await axios.get(`http://ip-api.com/json/${ip}`);
-      await browser.close();
-
-      if (geo.data.country !== 'India') validProxies.push(proxy);
-    } catch {
-      // skip invalid proxy
-    }
+export async function sendTelegramMessage(text) {
+  try {
+    await bot.sendMessage(userId, text, { parse_mode: 'HTML' });
+  } catch (err) {
+    console.error('Telegram send error:', err.message);
   }
-
-  return validProxies;
 }
 
-let index = 0;
-export async function getNextProxy(proxies) {
-  if (!proxies.length) return null;
-  const proxy = proxies[index % proxies.length];
-  index++;
-  return proxy;
+export async function sendTelegramPhoto(filepath, caption) {
+  try {
+    await bot.sendPhoto(userId, fs.createReadStream(filepath), { caption });
+  } catch (err) {
+    console.error('Telegram photo error:', err.message);
+  }
 }
