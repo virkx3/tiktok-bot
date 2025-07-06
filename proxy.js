@@ -1,27 +1,22 @@
-const https = require('https');
+const axios = require('axios');
 
-let proxies = [];
+async function getProxies() {
+  try {
+    const res = await axios.get('https://raw.githubusercontent.com/SoliSpirit/proxy-list/main/socks5.txt');
+    const rawProxies = res.data.split('\n').map(p => p.trim()).filter(Boolean);
 
-function filterValid(proxyList) {
-  return proxyList.filter(p => !p.includes('IN') && !p.includes('India'));
-}
-
-function fetchProxies() {
-  return new Promise((resolve) => {
-    https.get('https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks5.txt', res => {
-      let data = '';
-      res.on('data', chunk => (data += chunk));
-      res.on('end', () => {
-        proxies = filterValid(data.split('\n').map(line => line.trim()).filter(Boolean));
-        resolve();
-      });
+    // Optional: Filter only SOCKS5-looking ports (1080 and other common ones)
+    const socks5Ports = [1080, 9050, 9150];
+    const socks5Proxies = rawProxies.filter(proxy => {
+      const port = parseInt(proxy.split(':')[1]);
+      return socks5Ports.includes(port);
     });
-  });
+
+    return socks5Proxies;
+  } catch (err) {
+    console.error('❌ Failed to fetch proxies:', err.message);
+    return [];
+  }
 }
 
-async function getWorkingProxy() {
-  if (proxies.length === 0) await fetchProxies();
-  return proxies[Math.floor(Math.random() * proxies.length)];
-}
-
-module.exports = { getWorkingProxy };
+module.exports = { getProxies };
