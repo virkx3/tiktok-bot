@@ -105,13 +105,17 @@ async function shareVideo(video, shareCount) {
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
   try {
-    await page.goto(video.url);
-    await page.waitForTimeout(rand(1000, 3000));
+    await page.goto(video.url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    await new Promise(res => setTimeout(res, rand(1000, 3000)));
+
     await page.evaluate(() => window.scrollBy(0, 300));
+
     for (let i = 0; i < shareCount; i++) {
-      // Simulate click share + copy link (not literally clicking, placeholder)
-      await page.waitForTimeout(rand(300, 800));
+      // Simulate clicking share and copy link
+      await new Promise(res => setTimeout(res, rand(300, 800)));
     }
+
     await browser.close();
     return true;
   } catch (e) {
