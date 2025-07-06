@@ -178,8 +178,7 @@ async function startBot() {
     args: [`--proxy-server=${detectProxyType(proxy) === "socks" ? `socks5://${proxy}` : `http://${proxy}`}`, "--no-sandbox"]
   });
 
-  const context = await browser.createIncognitoBrowserContext();
-  const page = await context.newPage();
+  const page = await browser.newPage();
 
   await page.setUserAgent("Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.97 Mobile Safari/537.36 TikTok/26.1.3");
   await page.setViewport({ width: 390, height: 844, isMobile: true });
