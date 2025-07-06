@@ -1,70 +1,72 @@
-const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
+const { chromium } = require("playwright");
+const getValidProxy = require("./proxy");
 
-const MAX_RETRIES = 3;
+async function scrapeUser(username) {
+  const maxAttempts = 3;
 
-async function getLatestVideos(username) {
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`🔁 [${username}] Attempt ${attempt}...`);
 
-    const browser = await chromium.launch({ headless: true });
+    let browser;
+    try {
+      const proxy = await getValidProxy();
 
-const context = await browser.newContext({
-  userAgent:
-    "Mozilla/5.0 (Linux; Android 11; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Mobile Safari/537.36",
-});
-
-const page = await context.newPage();
-
-      const profileUrl = `https://www.tiktok.com/@${username}`;
-      await page.goto(profileUrl, { timeout: 60000 });
-
-      // Wait for video thumbnails
-      await page.waitForSelector("img", { timeout: 20000 });
-
-      const videos = await page.evaluate(() => {
-        const anchors = Array.from(document.querySelectorAll("a")).filter(a =>
-          a.href.includes("/video/") && a.querySelector("img")
-        );
-
-        return anchors.slice(0, 5).map((a) => {
-          const likesElement = a.querySelector("strong");
-          let likes = 0;
-
-          if (likesElement) {
-            const text = likesElement.innerText.trim().toLowerCase();
-            if (text.endsWith("k")) likes = parseFloat(text) * 1000;
-            else if (text.endsWith("m")) likes = parseFloat(text) * 1000000;
-            else likes = parseInt(text);
-          }
-
-          return {
-            url: a.href,
-            likes: Math.floor(likes),
-          };
-        });
+      browser = await chromium.launch({
+        headless: true,
+        proxy: proxy ? { server: proxy } : undefined,
       });
 
-      await browser.close();
-      return videos;
+      const context = await browser.newContext({
+        userAgent:
+          "Mozilla/5.0 (Linux; Android 11; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Mobile Safari/537.36",
+      });
 
+      const page = await context.newPage();
+      await page.goto(`https://www.tiktok.com/@${username}`, {
+        timeout: 20000,
+        waitUntil: "domcontentloaded",
+      });
+
+      // Wait for video thumbnails to appear
+      await page.waitForSelector("div[data-e2e='user-post-item-list']", {
+        timeout: 20000,
+      });
+
+      const videoLinks = await page.$$eval(
+        "div[data-e2e='user-post-item-list'] a",
+        (anchors) => anchors.map((a) => a.href)
+      );
+
+      console.log(`📹 [${username}] Found ${videoLinks.length} videos`);
+
+      await browser.close();
+      return videoLinks;
     } catch (err) {
-      console.warn(`⚠️ Scraping error for ${username} (attempt ${attempt}):`, err.message);
+      console.error(
+        `⚠️ Scraping error for ${username} (attempt ${attempt}):`,
+        err.message
+      );
 
-      // Optional: Save screenshot for debugging
-      try {
-        const filePath = path.join(__dirname, `screenshot-${username}.png`);
-        await page.screenshot({ path: filePath });
-        console.log(`📸 Saved screenshot to ${filePath}`);
-      } catch (_) {}
+      if (browser) {
+        const screenshotPath = path.join(
+          __dirname,
+          `screenshot-${username}.png`
+        );
+        const page = await browser.newPage().catch(() => null);
+        if (page) await page.screenshot({ path: screenshotPath }).catch(() => {});
+        console.log(`📸 Saved screenshot to ${screenshotPath}`);
+        await browser.close().catch(() => {});
+      }
 
-      await browser.close();
+      // Wait a bit before retrying
+      await new Promise((res) => setTimeout(res, 2000));
     }
   }
 
-  console.error(`❌ Failed scraping ${username} after ${MAX_RETRIES} attempts.`);
+  console.error(`❌ Failed scraping ${username} after ${maxAttempts} attempts.`);
   return [];
 }
 
-module.exports = { getLatestVideos };
+module.exports = scrapeUser;
