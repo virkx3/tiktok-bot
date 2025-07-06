@@ -1,58 +1,27 @@
-const fetch = require("node-fetch");
-const { chromium } = require("playwright");
+const https = require('https');
 
-const PROXY_SOURCE = "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks5.txt";
+let proxies = [];
 
-async function isProxyValid(proxy) {
-  try {
-    const browser = await chromium.launch({
-      headless: true,
-      proxy: {
-        server: `socks5://${proxy}`,
-      },
+function filterValid(proxyList) {
+  return proxyList.filter(p => !p.includes('IN') && !p.includes('India'));
+}
+
+function fetchProxies() {
+  return new Promise((resolve) => {
+    https.get('https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks5.txt', res => {
+      let data = '';
+      res.on('data', chunk => (data += chunk));
+      res.on('end', () => {
+        proxies = filterValid(data.split('\n').map(line => line.trim()).filter(Boolean));
+        resolve();
+      });
     });
-
-    const page = await browser.newPage();
-    await page.goto("https://www.tiktok.com", { timeout: 15000 });
-
-    // Optional: check if redirected to banned message
-    const content = await page.content();
-    await browser.close();
-
-    return !/403|blocked|unavailable|captcha/i.test(content);
-  } catch (err) {
-    return false;
-  }
+  });
 }
 
-async function getValidProxy() {
-  try {
-    const res = await fetch(PROXY_SOURCE);
-    const text = await res.text();
-
-    const proxies = text
-      .split("\n")
-      .map(p => p.trim())
-      .filter(p => p && !p.startsWith("#"));
-
-    for (const proxy of proxies) {
-      console.log(`🔍 Testing proxy: ${proxy}`);
-      const isWorking = await isProxyValid(proxy);
-
-      if (isWorking) {
-        console.log(`✅ Proxy works: ${proxy}`);
-        return `socks5://${proxy}`;
-      } else {
-        console.log(`❌ Proxy blocked or failed: ${proxy}`);
-      }
-    }
-
-    console.warn("⚠️ No working proxies found.");
-    return null;
-  } catch (err) {
-    console.error("❌ Proxy fetch error:", err.message);
-    return null;
-  }
+async function getWorkingProxy() {
+  if (proxies.length === 0) await fetchProxies();
+  return proxies[Math.floor(Math.random() * proxies.length)];
 }
 
-module.exports = getValidProxy;
+module.exports = { getWorkingProxy };
