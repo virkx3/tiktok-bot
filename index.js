@@ -17,6 +17,8 @@ const usernames = process.env.TIKTOK_USERNAMES.split(",").map(u => u.trim());
 const loginUsername = "ssociaixzl3s";
 const loginPassword = "Virksaab@12345";
 
+const testedProxies = new Set();
+
 function log(message) {
   const logMessage = `[${new Date().toISOString()}] ${message}`;
   console.log(logMessage);
@@ -36,22 +38,37 @@ function saveProcessed(data) {
   fs.writeFileSync("processed.json", JSON.stringify(data, null, 2));
 }
 
-async function getLatestProxies() {
-  const updates = await bot.getUpdates();
-  const messages = updates.map(u => u.channel_post).filter(Boolean);
-  for (let msg of messages.reverse()) {
-    if (msg.chat && msg.chat.username === proxyChannel.replace("@", "")) {
-      const proxies = msg.text.match(/\b(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}\b/g);
-      if (proxies && proxies.length) return proxies;
+async function getLatestProxiesFromTelegram() {
+  try {
+    const { data } = await axios.get(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getUpdates`);
+    const proxies = [];
+
+    for (let update of data.result.reverse()) {
+      const text = update?.channel_post?.text || "";
+      if (text.includes("proxies can reach Instagram")) {
+        const matches = text.match(/\b(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}\b/g);
+        if (matches) {
+          for (let proxy of matches) {
+            if (!testedProxies.has(proxy)) proxies.push(proxy);
+          }
+        }
+      }
     }
+
+    return proxies;
+  } catch (err) {
+    log("❌ Failed to get proxies from Telegram: " + err.message);
+    return [];
   }
-  return [];
 }
 
 async function testProxy(proxy) {
   try {
     const agent = new HttpsProxyAgent(`http://${proxy}`);
-    const res = await axios.get("https://www.tiktok.com", { httpsAgent: agent, timeout: 8000 });
+    const res = await axios.get("https://www.tiktok.com", {
+      httpsAgent: agent,
+      timeout: 8000,
+    });
     return res.status === 200;
   } catch {
     return false;
@@ -59,15 +76,22 @@ async function testProxy(proxy) {
 }
 
 async function getWorkingProxy() {
-  const proxies = await getLatestProxies();
+  const proxies = await getLatestProxiesFromTelegram();
+  if (!proxies.length) {
+    log("❌ No new proxies found from Telegram");
+    return null;
+  }
+
   for (let proxy of proxies) {
-    log(`Testing proxy: ${proxy}`);
+    testedProxies.add(proxy);
+    log(`🌐 Testing proxy: ${proxy}`);
     if (await testProxy(proxy)) {
-      log(`✅ Working proxy: ${proxy}`);
+      log(`✅ Working proxy found: ${proxy}`);
       return proxy;
     }
   }
-  log("❌ No working proxies found");
+
+  log("❌ No working proxies after testing all");
   return null;
 }
 
@@ -106,7 +130,10 @@ async function loginIfNeeded(page) {
 async function startBot() {
   const processed = loadProcessed();
   const proxy = await getWorkingProxy();
-  if (!proxy) return;
+  if (!proxy) {
+    log("🕐 Retrying in 5 minutes...");
+    return setTimeout(startBot, 5 * 60 * 1000);
+  }
 
   const browser = await puppeteer.launch({
     headless: true,
