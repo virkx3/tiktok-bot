@@ -261,7 +261,12 @@ async function startBot() {
 
   await browser.close();
   log("✅ Cycle complete. Sleeping 2 hours...");
-  setTimeout(startBot, 2 * 60 * 60 * 1000);
+  setTimeout(() => {
+  log("🔁 Waking up after sleep, starting next cycle...");
+  startBot();
+}, 2 * 60 * 60 * 1000);
+
+setInterval(() => {}, 1000); // Keeps Railway container alive
 }
 
 startBot();
