@@ -11,16 +11,16 @@ export async function scrapeUserVideos(username) {
     await page.waitForTimeout(3000);
 
     const videos = await page.evaluate(() => {
-      const items = Array.from(document.querySelectorAll('div[data-e2e="user-post-item"] a'));
-      return items.slice(0, 10).map(a => {
-        const url = a.href;
-        const idMatch = url.match(/\\/video\\/(\\d+)/);
-        return {
-          id: idMatch ? idMatch[1] : url,
-          url
-        };
-      });
-    });
+  const items = Array.from(document.querySelectorAll('div[data-e2e="user-post-item"] a'));
+  return items.slice(0, 10).map(a => {
+    const url = a.href;
+    const idMatch = url.match(/\/video\/(\d+)/);
+    return {
+      id: idMatch ? idMatch[1] : url,
+      url
+    };
+  });
+});
 
     for (const video of videos) {
       try {
