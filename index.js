@@ -24,7 +24,7 @@ function log(msg) {
   const time = `[${new Date().toISOString()}]`;
   console.log(`${time} ${msg}`);
   fs.appendFileSync("log.txt", `${time} ${msg}\n`);
-  if (telegramUserId) bot.sendMessage(telegramUserId, `${msg}`).catch(() => {});
+  if (telegramUserId) bot.sendMessage(telegramUserId, msg).catch(() => {});
 }
 
 function loadProcessed() {
@@ -55,7 +55,11 @@ async function testProxy(proxy) {
       timeout: 8000,
     });
     return res.status === 200;
-  } catch {
+  } catch (err) {
+    if (err.code === 'ERR_CERT_AUTHORITY_INVALID' || err.message.includes("CERT")) {
+      log(`❌ Proxy ${proxy} has invalid SSL certificate`);
+      fs.appendFileSync("bad_proxies.txt", proxy + "\n");
+    }
     return false;
   }
 }
@@ -175,11 +179,15 @@ async function startBot() {
 
   const browser = await puppeteer.launch({
     headless: true,
-    args: [`--proxy-server=${detectProxyType(proxy) === "socks" ? `socks5://${proxy}` : `http://${proxy}`}`, "--no-sandbox"]
+    ignoreHTTPSErrors: true,
+    args: [
+      `--proxy-server=${detectProxyType(proxy) === "socks" ? `socks5://${proxy}` : `http://${proxy}`}`,
+      "--no-sandbox",
+      "--disable-setuid-sandbox"
+    ]
   });
 
   const page = await browser.newPage();
-
   await page.setUserAgent("Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.97 Mobile Safari/537.36 TikTok/26.1.3");
   await page.setViewport({ width: 390, height: 844, isMobile: true });
 
