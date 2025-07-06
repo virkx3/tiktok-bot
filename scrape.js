@@ -1,71 +1,90 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const { getNextProxy } = require('./proxyManager');
+const { sendTelegramLog } = require('./telegram');
 
-async function scrapeUserVideos(username, proxy, attempt = 1) {
-  console.log(`🔍 Scraping: ${username} (Attempt ${attempt})`);
+const shareThresholds = [
+  { minLikes: 5000, shares: 150 },
+  { minLikes: 1000, shares: 100 },
+  { minLikes: 100, shares: 50 },
+  { minLikes: 0, shares: 0 }
+];
 
-  let browser;
-  try {
-    browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox'],
-      proxy: proxy ? { server: `socks5://${proxy}` } : undefined,
-    });
+const sharedHistory = {};
 
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36"
-    });
+async function scrape(username) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const proxy = getNextProxy();
+    console.log(`🌐 Using proxy: ${proxy || 'None'}`);
+    console.log(`🔍 Scraping: ${username} (Attempt ${attempt})`);
 
-    const page = await context.newPage();
+    try {
+      const browser = await chromium.launch({
+        headless: true,
+        proxy: proxy ? { server: `socks5://${proxy}` } : undefined,
+      });
 
-    const userUrl = `https://www.tiktok.com/@${username}`;
-    console.log(`🌐 Navigating to ${userUrl}`);
-    await page.goto(userUrl, { timeout: 20000 });
+      const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...',
+        locale: 'en-US'
+      });
 
-    console.log("🔍 Waiting for video list...");
-    await page.waitForSelector('div[data-e2e="user-post-item-list"]', { timeout: 15000 });
+      const page = await context.newPage();
+      const url = `https://www.tiktok.com/@${username}`;
+      console.log(`🌐 Navigating to ${url}`);
+      await page.goto(url, { timeout: 20000 });
 
-    const videoLinks = await page.$$eval('a[href*="/video/"]', links =>
-      links.map(link => link.href)
-    );
+      console.log('🔍 Waiting for video list...');
+      await page.waitForSelector('div[data-e2e="user-post-item-list"]', { timeout: 15000 });
 
-    console.log(`🎞️ Found ${videoLinks.length} videos for ${username}`);
+      const videos = await page.$$eval('div[data-e2e="user-post-item"] a', links =>
+        links.map(link => link.href)
+      );
 
-    for (const link of videoLinks) {
-      console.log(`➡️ Visiting video: ${link}`);
-      await page.goto(link, { timeout: 20000 });
+      console.log(`🎬 Found ${videos.length} videos`);
 
-      // Wait and click Share
-      await page.waitForSelector('button[data-e2e="share-button"]', { timeout: 10000 });
-      await page.click('button[data-e2e="share-button"]');
-      console.log("📤 Clicked share button");
+      for (const videoUrl of videos) {
+        const videoId = videoUrl.split('/').pop();
+        await page.goto(videoUrl, { timeout: 15000 });
+        await page.waitForTimeout(5000);
 
-      // Wait and click Copy Link
-      await page.waitForSelector('button[data-e2e="copy-link"]', { timeout: 10000 });
-      await page.click('button[data-e2e="copy-link"]');
-      console.log("🔗 Clicked copy link (share simulated)");
-    }
+        const likes = await page.$eval('strong[data-e2e="like-count"]', el =>
+          parseInt(el.textContent.replace(/[^\d]/g, '') || '0')
+        );
 
-    await browser.close();
-    console.log(`✅ Done scraping ${username}`);
+        const previousShares = sharedHistory[videoId] || 0;
+        const shareTarget = shareThresholds.find(t => likes >= t.minLikes).shares;
 
-  } catch (err) {
-    console.error(`⚠️ Scraping error for ${username} (attempt ${attempt}):`, err.message);
-    const screenshotPath = path.join(__dirname, `screenshot-${username}.png`);
-    if (browser) {
-      const page = (await browser.contexts()[0].pages())[0];
-      await page.screenshot({ path: screenshotPath });
-      console.log(`📸 Saved screenshot to ${screenshotPath}`);
-    }
-    if (browser) await browser.close();
+        const sharesToDo = Math.max(shareTarget - previousShares, 0);
+        if (sharesToDo > 0) {
+          console.log(`📈 Sharing ${videoId} - ${sharesToDo} times`);
+          for (let i = 0; i < sharesToDo; i++) {
+            try {
+              await page.click('button[data-e2e="share-icon"]');
+              await page.click('button[data-e2e="copy-link"]');
+              await page.waitForTimeout(500);
+            } catch (err) {
+              console.log(`⚠️ Share click failed: ${err.message}`);
+            }
+          }
 
-    if (attempt < 3) {
-      await scrapeUserVideos(username, proxy, attempt + 1);
-    } else {
-      console.error(`❌ Failed scraping ${username} after 3 attempts.`);
+          sharedHistory[videoId] = previousShares + sharesToDo;
+          await sendTelegramLog(`✅ Shared [${videoId}] ${sharesToDo}x (Likes: ${likes})`);
+        } else {
+          console.log(`⏭️ Skipping [${videoId}] (Likes: ${likes}, Already Shared: ${previousShares})`);
+        }
+      }
+
+      await browser.close();
+      break;
+    } catch (err) {
+      console.error(`⚠️ Scraping error for ${username} (attempt ${attempt}): ${err.message}`);
+      await sendTelegramLog(`❌ Error scraping ${username}: ${err.message}`);
+      const screenshotPath = path.join(__dirname, `screenshot-${username}.png`);
+      fs.writeFileSync(screenshotPath, await page.screenshot());
     }
   }
 }
 
-module.exports = scrapeUserVideos;
+module.exports = scrape;
