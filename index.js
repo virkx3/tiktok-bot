@@ -1,10 +1,8 @@
 // index.js require("dotenv").config(); const puppeteer = require("puppeteer-extra"); const StealthPlugin = require("puppeteer-extra-plugin-stealth"); const TelegramBot = require("node-telegram-bot-api"); const fs = require("fs"); const path = require("path"); const axios = require("axios"); const HttpsProxyAgent = require("https-proxy-agent");
 
-const processedPath = path.join(__dirname, "processed.json"); const logPath = path.join(__dirname, "log.txt");
+const processedPath = path.join(__dirname, "processed.json"); const logPath = path.join(__dirname, "log.txt"); puppeteer.use(StealthPlugin());
 
-puppeteer.use(StealthPlugin());
-
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false }); const telegramUserId = process.env.TELEGRAM_USER_ID; const proxyChannel = process.env.PROXY_CHANNEL; const usernames = process.env.TIKTOK_USERNAMES.split(",").map(u => u.trim());
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false }); const telegramUserId = process.env.TELEGRAM_USER_ID; const proxyChannel = process.env.PROXY_CHANNEL; const usernames = process.env.TIKTOK_USERNAMES.split(",").map(u => u.trim()); const loginUsername = "ssociaixzl3s"; const loginPassword = "Virksaab@12345";
 
 function log(message) { const logMessage = [${new Date().toISOString()}] ${message}; console.log(logMessage); fs.appendFileSync(logPath, logMessage + "\n"); if (telegramUserId) bot.sendMessage(telegramUserId, logMessage).catch(() => {}); }
 
@@ -18,6 +16,10 @@ async function testProxy(proxy) { try { const agent = new HttpsProxyAgent(http:/
 
 async function getWorkingProxy() { const proxies = await getLatestProxies(); for (let proxy of proxies) { log(Testing proxy: ${proxy}); if (await testProxy(proxy)) { log(✅ Working proxy: ${proxy}); return proxy; } } log("❌ No working proxies found"); return null; }
 
+async function scrollActivity(page) { for (let i = 0; i < 5; i++) { await page.evaluate(() => { window.scrollBy(0, 100 + Math.random() * 300); }); await page.waitForTimeout(1000 + Math.random() * 2000); } }
+
+async function loginIfNeeded(page) { try { await page.goto("https://www.tiktok.com", { waitUntil: "networkidle2" }); await page.waitForTimeout(5000); if (await page.$("a[href='/login']")) { log("🔐 Session expired, logging in..."); await page.goto("https://www.tiktok.com/login/phone-or-email/email"); await page.waitForSelector("input[name='email']", { timeout: 10000 }); await page.type("input[name='email']", loginUsername, { delay: 100 }); await page.type("input[name='password']", loginPassword, { delay: 100 }); await page.click("button[type='submit']"); await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }); const cookies = await page.cookies(); fs.writeFileSync(path.join(__dirname, "cookies.json"), JSON.stringify(cookies, null, 2)); log("✅ Logged in and cookies saved"); } else { log("✅ Session active with cookies"); } } catch (err) { log("❌ Login failed: " + err.message); } }
+
 async function startBot() { const processed = loadProcessed(); const proxy = await getWorkingProxy(); if (!proxy) return;
 
 const browser = await puppeteer.launch({ headless: true, args: [ --proxy-server=http://${proxy}, "--no-sandbox", "--disable-setuid-sandbox" ] });
@@ -26,9 +28,11 @@ const context = await browser.createIncognitoBrowserContext(); const page = awai
 
 await page.setUserAgent( "Mozilla/5.0 (Linux; Android 11; SM-A515F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.97 Mobile Safari/537.36 TikTok/26.1.3" ); await page.setViewport({ width: 390, height: 844, isMobile: true });
 
-// Load cookies const cookiesPath = path.join(__dirname, "cookies.json"); if (fs.existsSync(cookiesPath)) { const cookies = JSON.parse(fs.readFileSync(cookiesPath)); await page.setCookie(...cookies); } else { log("❌ No TikTok cookies found. Please login manually and save them as cookies.json"); await browser.close(); return; }
+const cookiesPath = path.join(__dirname, "cookies.json"); if (fs.existsSync(cookiesPath)) { const cookies = JSON.parse(fs.readFileSync(cookiesPath)); await page.setCookie(...cookies); }
 
-for (let username of usernames) { try { const profileUrl = https://www.tiktok.com/@${username}; log(📲 Visiting profile: ${profileUrl}); await page.goto(profileUrl, { waitUntil: "networkidle2", timeout: 60000 }); await page.waitForTimeout(5000);
+await loginIfNeeded(page);
+
+for (let username of usernames) { try { const profileUrl = https://www.tiktok.com/@${username}; log(📲 Visiting profile: ${profileUrl}); await page.goto(profileUrl, { waitUntil: "networkidle2", timeout: 60000 }); await scrollActivity(page);
 
 const videoLinks = await page.$$eval("a", as =>
     as.map(a => a.href).filter(h => h.includes("/video/"))
@@ -40,9 +44,8 @@ const videoLinks = await page.$$eval("a", as =>
 
     log(`➡️ Processing post: ${link}`);
     await page.goto(link, { waitUntil: "networkidle2" });
-    await page.waitForTimeout(4000);
+    await scrollActivity(page);
 
-    // Like the video
     try {
       await page.click('span[data-e2e="like-icon"]');
       log("❤️ Liked");
@@ -50,7 +53,6 @@ const videoLinks = await page.$$eval("a", as =>
       log("⚠️ Like button not found or already liked");
     }
 
-    // Get like count
     let likeCount = await page.evaluate(() => {
       const el = document.querySelector('strong[data-e2e="like-count"]');
       return el ? parseInt(el.textContent.replace(/,/g, "")) : 0;
