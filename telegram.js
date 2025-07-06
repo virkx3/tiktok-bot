@@ -1,17 +1,12 @@
-const axios = require('axios');
+const TelegramBot = require('node-telegram-bot-api');
 
-const botToken = '7596985533:AAHjRG1gvHkm2bM6oSJtgOMffHSM8TcgQkw';
-const userId = '1098100073';
+const TOKEN = '7596985533:AAHjRG1gvHkm2bM6oSJtgOMffHSM8TcgQkw';
+const USER_ID = '1098100073';
 
-async function sendTelegramLog(message) {
-  try {
-    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      chat_id: userId,
-      text: message,
-    });
-  } catch (e) {
-    console.error('❌ Failed to send Telegram log:', e.message);
-  }
+const bot = new TelegramBot(TOKEN);
+
+function sendLog(message) {
+  bot.sendMessage(USER_ID, message, { parse_mode: 'Markdown' });
 }
 
-module.exports = { sendTelegramLog };
+module.exports = sendLog;
