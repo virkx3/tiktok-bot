@@ -1,13 +1,24 @@
 {
-  "name": "tiktok-railway-bot",
+  "name": "tiktok-share-bot",
   "version": "1.0.0",
+  "description": "TikTok auto-share bot using Playwright with proxy rotation and Telegram logging",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
-    "node-fetch": "^2.6.7",
-    "playwright": "^1.43.1"
-  }
+    "axios": "^1.6.8",
+    "playwright": "^1.44.0"
+  },
+  "keywords": [
+    "tiktok",
+    "bot",
+    "automation",
+    "playwright",
+    "proxy",
+    "telegram"
+  ],
+  "author": "virk",
+  "license": "MIT"
 }
