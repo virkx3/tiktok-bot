@@ -1,17 +1,19 @@
 const scrape = require('./scrape');
-const users = ['its.sahiba2233', 'iamvirk'];
+const sendLog = require('./telegram');
+const { loadProxies } = require('./proxyManager');
 
-(async () => {
-  console.log('✅ Bot started');
+const TARGET_USERS = ['its.sahiba2233', 'iamvirk'];
 
-  for (const username of users) {
+async function run() {
+  sendLog('✅ Bot started');
+  loadProxies();
+
+  for (const username of TARGET_USERS) {
     await scrape(username);
   }
 
-  console.log('✅ Scraping cycle complete. Will recheck in 2 hours.');
-  setInterval(async () => {
-    for (const username of users) {
-      await scrape(username);
-    }
-  }, 2 * 60 * 60 * 1000); // every 2 hours
-})();
+  // Re-run every 2 hours
+  setTimeout(run, 2 * 60 * 60 * 1000);
+}
+
+run();
