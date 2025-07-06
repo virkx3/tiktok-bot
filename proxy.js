@@ -1,22 +1,20 @@
-const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
-async function getProxies() {
-  try {
-    const res = await axios.get('https://raw.githubusercontent.com/SoliSpirit/proxy-list/main/socks5.txt');
-    const rawProxies = res.data.split('\n').map(p => p.trim()).filter(Boolean);
-
-    // Optional: Filter only SOCKS5-looking ports (1080 and other common ones)
-    const socks5Ports = [1080, 9050, 9150];
-    const socks5Proxies = rawProxies.filter(proxy => {
-      const port = parseInt(proxy.split(':')[1]);
-      return socks5Ports.includes(port);
-    });
-
-    return socks5Proxies;
-  } catch (err) {
-    console.error('❌ Failed to fetch proxies:', err.message);
+// Load and parse proxies
+function loadProxies() {
+  const filePath = path.resolve(__dirname, 'proxy.txt');
+  if (!fs.existsSync(filePath)) {
+    console.log('❌ proxy.txt file not found');
     return [];
   }
+
+  const lines = fs.readFileSync(filePath, 'utf-8')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !line.includes('IN') && line.includes(':'));
+
+  return lines;
 }
 
-module.exports = { getProxies };
+const proxies = loadProxies();
