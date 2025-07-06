@@ -1,6 +1,7 @@
 {
   "name": "tiktok-share-bot",
   "version": "1.0.0",
+  "type": "module",             // 👈 Add this line
   "description": "A TikTok auto-sharing bot with proxy, Telegram logging, and like-based sharing logic",
   "main": "index.js",
   "scripts": {
