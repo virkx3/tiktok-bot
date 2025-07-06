@@ -1,41 +1,17 @@
-# Use the official Node.js 18 base image
-FROM node:18-slim
-
-# Install required packages for Puppeteer
-RUN apt-get update && apt-get install -y \
-  wget \
-  ca-certificates \
-  fonts-liberation \
-  libappindicator3-1 \
-  libasound2 \
-  libatk-bridge2.0-0 \
-  libatk1.0-0 \
-  libcups2 \
-  libdbus-1-3 \
-  libgdk-pixbuf2.0-0 \
-  libnspr4 \
-  libnss3 \
-  libx11-xcb1 \
-  libxcomposite1 \
-  libxdamage1 \
-  libxrandr2 \
-  xdg-utils \
-  --no-install-recommends \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+# Use official Puppeteer image with Chromium
+FROM ghcr.io/puppeteer/puppeteer:latest
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Copy only package files first
 COPY package*.json ./
+
+# Install dependencies
 RUN npm install
 
-# Copy rest of the bot code
+# Copy rest of the files
 COPY . .
 
-# Set Puppeteer env vars
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-
-# Start the bot
+# Run the bot
 CMD ["npm", "start"]
