@@ -34,7 +34,7 @@ def mark_as_shared(video_id, shares):
     data[video_id] = shares
     save_shared_data(data)
 
-def get_share_count_based_on_likes(likes):
+def calculate_share_count(likes):
     if likes < 100:
         return 0
     elif 100 <= likes < 1000:
