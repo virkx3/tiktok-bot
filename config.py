@@ -1,25 +1,21 @@
 # config.py
 
-# Telegram Bot Credentials
+# TikTok credentials
+TIKTOK_USERNAME = "sociaixzl3s"
+TIKTOK_PASSWORD = "Virksaab@12345"
+
+# Telegram bot info
 TELEGRAM_BOT_TOKEN = "7596985533:AAHjRG1gvHkm2bM6oSJtgOMffHSM8TcgQkw"
 TELEGRAM_USER_ID = "1098100073"
 
-# Proxy list file
-PROXY_LIST_PATH = "proxy.txt"
-
-# Time interval to recheck videos (in seconds) – 2 hours
-CHECK_INTERVAL = 2 * 60 * 60
-
-# Target TikTok usernames
+# Scraping settings
 TARGET_USERNAMES = ["its.sahiba2233", "iamvirk"]
+CHECK_INTERVAL = 2 * 60 * 60  # 2 hours in seconds
 
-# Share strategy based on like count
-def calculate_share_count(likes: int) -> int:
-    if likes < 100:
-        return 0
-    elif 100 <= likes < 1000:
-        return 50
-    elif 1000 <= likes <= 5000:
-        return 100
-    else:
-        return 150
+# Proxy settings
+PROXY_FILE = "proxy.txt"
+PROXY_RETRY_LIMIT = 2
+ALLOW_COUNTRIES = ["US", "DE", "NL"]  # ISO country codes (optional)
+
+# Screenshot path
+ERROR_SCREENSHOT_PATH = "error_screenshot.png"
