@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["python3", "gcc"]
+
+[phases.install]
+cmds = [
+  "python -m venv /opt/venv",
+  ". /opt/venv/bin/activate && pip install -r requirements.txt",
+  ". /opt/venv/bin/activate && playwright install --with-deps"
+]
+
+[phases.start]
+cmd = ". /opt/venv/bin/activate && python index.py"
