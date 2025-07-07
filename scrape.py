@@ -1,68 +1,85 @@
-import random
+from login import login_to_tiktok
+from utils import get_share_count, already_shared, save_shared, get_random_share_count
+import json
 import time
-from playwright.sync_api import sync_playwright
-from utils import (
-    get_target_usernames,
-    get_valid_proxies,
-    get_random_proxy,
-    get_videos_from_user,
-    already_shared,
-    mark_as_shared,
-    get_share_count_based_on_likes
-)
 
-RECHECK_INTERVAL = 2 * 60 * 60  # 2 hours in seconds
+def get_target_usernames():
+    with open("target.txt", "r") as f:
+        return [line.strip() for line in f if line.strip()]
+
+def get_user_videos(page, username):
+    print(f"[*] Navigating to @{username}'s profile...")
+    page.goto(f"https://www.tiktok.com/@{username}")
+    page.wait_for_timeout(5000)
+
+    print("[*] Scraping video links...")
+    video_links = set()
+    anchors = page.query_selector_all('a[href*="/video/"]')
+    for a in anchors:
+        href = a.get_attribute("href")
+        if href and "/video/" in href:
+            video_links.add(href)
+
+    return list(video_links)[:10]  # Limit to last 10 videos
+
+def should_share(video_data):
+    likes = video_data["likes"]
+    shares = video_data["shares"]
+
+    if likes < 100:
+        return 0
+    elif 100 <= likes <= 999:
+        return get_random_share_count(30, 50, shares)
+    elif 1000 <= likes <= 5000:
+        return get_random_share_count(50, 100, shares)
+    else:
+        return get_random_share_count(100, 150, shares)
+
+def process_user_videos(page, username):
+    videos = get_user_videos(page, username)
+    for url in videos:
+        video_id = url.split("/video/")[-1]
+        if already_shared(video_id):
+            print(f"[=] Already shared video {video_id}. Skipping.")
+            continue
+
+        print(f"[*] Processing video {video_id}")
+        page.goto(url)
+        page.wait_for_timeout(5000)
+
+        # Extract like/share count
+        try:
+            likes = int(page.inner_text('[data-e2e="like-count"]').replace(',', ''))
+            shares = get_share_count(page)
+        except Exception as e:
+            print(f"[!] Failed to get counts: {e}")
+            continue
+
+        share_times = should_share({"likes": likes, "shares": shares})
+        if share_times == 0:
+            print(f"[!] Not enough likes to share. Skipping video.")
+            continue
+
+        print(f"[+] Sharing video {video_id} — {share_times} times")
+
+        for _ in range(share_times):
+            try:
+                page.click('button[data-e2e="share-button"]')
+                page.wait_for_timeout(1500)
+                page.click('button[data-e2e="share-copylink"]')
+                time.sleep(1)
+            except Exception as e:
+                print(f"[!] Failed to share: {e}")
+
+        save_shared(video_id)
+        print(f"[✓] Shared {video_id} and marked as done.\n")
 
 def scrape():
-    target_usernames = get_target_usernames()
-    shared_cache = already_shared()
-    proxies = get_valid_proxies()
+    browser, context, page = login_to_tiktok()
+    usernames = get_target_usernames()
 
-    while True:
-        print("\n[+] Starting scrape loop...")
-        for username in target_usernames:
-            print(f"[+] Checking videos for @{username}")
-            videos = get_videos_from_user(username, proxies)
-            for video in videos:
-                video_id = video['id']
-                likes = video['likes']
-                url = video['url']
+    for user in usernames:
+        process_user_videos(page, user)
+        time.sleep(3)
 
-                if video_id in shared_cache:
-                    previous_shares = shared_cache[video_id]['shares']
-                    previous_likes = shared_cache[video_id]['likes']
-                    if likes > previous_likes:
-                        new_shares = get_share_count_based_on_likes(likes) - previous_shares
-                        if new_shares > 0:
-                            print(f"[↑] Likes increased for {video_id}, sharing {new_shares} more times.")
-                            perform_shares(url, new_shares, proxies)
-                            shared_cache[video_id]['shares'] += new_shares
-                            shared_cache[video_id]['likes'] = likes
-                            mark_as_shared(shared_cache)
-                    continue
-
-                share_count = get_share_count_based_on_likes(likes)
-                if share_count > 0:
-                    print(f"[+] Sharing {video_id} ({likes} likes) {share_count} times.")
-                    perform_shares(url, share_count, proxies)
-                    shared_cache[video_id] = {'shares': share_count, 'likes': likes}
-                    mark_as_shared(shared_cache)
-
-        print(f"[*] Sleeping for {RECHECK_INTERVAL // 3600} hours...\n")
-        time.sleep(RECHECK_INTERVAL)
-
-
-def perform_shares(video_url, count, proxies):
-    for _ in range(count):
-        proxy = get_random_proxy(proxies)
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(proxy={"server": proxy}, headless=True)
-                context = browser.new_context()
-                page = context.new_page()
-                page.goto(video_url, timeout=30000)
-                page.click('text=Share', timeout=10000)
-                time.sleep(random.uniform(2, 4))
-                browser.close()
-        except Exception as e:
-            print(f"[!] Error while sharing with proxy {proxy}: {e}")
+    browser.close()
