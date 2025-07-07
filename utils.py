@@ -1,37 +1,49 @@
-import os
 import json
-import re
+import os
+import random
 import requests
+import time
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_USER_ID = os.getenv("TELEGRAM_USER_ID")
+
+SHARED_FILE = "shared.json"
+PROXY_FILE = "proxy.txt"
+
 
 def load_shared_data():
-    if not os.path.exists("shared.json"):
+    if not os.path.exists(SHARED_FILE):
         return {}
-    with open("shared.json", "r") as f:
+    with open(SHARED_FILE, "r") as f:
         return json.load(f)
 
+
 def save_shared_data(data):
-    with open("shared.json", "w") as f:
+    with open(SHARED_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-def already_shared(video_id):
-    if not os.path.exists("shared.json"):
-        return False
-    with open("shared.json", "r") as f:
-        data = json.load(f)
-        return video_id in data
 
-def update_shared_count(video_id, count):
+def already_shared(video_id):
     data = load_shared_data()
-    if video_id in data:
-        data[video_id] += count
-    else:
-        data[video_id] = count
+    return video_id in data
+
+
+def mark_as_shared(video_id):
+    data = load_shared_data()
+    data[video_id] = data.get(video_id, 0)
     save_shared_data(data)
 
-def get_shared_count(video_id):
+
+def update_share_count(video_id, new_count):
     data = load_shared_data()
-    return data.get(video_id, 0)
+    data[video_id] = new_count
+    save_shared_data(data)
+
 
 def calculate_share_count(likes):
     if likes < 100:
@@ -43,81 +55,82 @@ def calculate_share_count(likes):
     else:
         return 150
 
+
 def get_target_usernames():
-    if not os.path.exists("targets.txt"):
-        return []
-    with open("targets.txt", "r") as f:
-        return [line.strip() for line in f if line.strip()]
+    return ["its.sahiba2233", "iamvirk"]
 
-def extract_proxy_parts(proxy_line):
-    match = re.match(r'(?:(\w+):\/\/)?(?:(\w+):(\w+)@)?([\w\.-]+):(\d+)', proxy_line)
-    if not match:
-        return None
-    proxy_type = match.group(1) or 'socks5'
-    username = match.group(2)
-    password = match.group(3)
-    host = match.group(4)
-    port = match.group(5)
-    return proxy_type, host, port, username, password
 
-def is_indian_proxy(ip):
+def get_videos_from_user(page, username):
+    url = f"https://www.tiktok.com/@{username}"
+    page.goto(url, timeout=60000)
+    time.sleep(5)
+    video_elements = page.query_selector_all('a[href*="/video/"]')
+    videos = []
+    for video in video_elements:
+        href = video.get_attribute("href")
+        if "/video/" in href:
+            video_id = href.split("/video/")[1].split("?")[0]
+            videos.append({"url": href, "video_id": video_id})
+    return videos
+
+
+def send_telegram_message(message):
+    if not TELEGRAM_TOKEN or not TELEGRAM_USER_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_USER_ID, "text": message}
     try:
-        res = requests.get(f"http://ip-api.com/json/{ip}", timeout=5)
-        data = res.json()
-        return data.get("country", "").lower() == "india"
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print(f"Failed to send Telegram message: {e}")
+
+
+def send_telegram_screenshot(image_path):
+    if not TELEGRAM_TOKEN or not TELEGRAM_USER_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+    with open(image_path, "rb") as photo:
+        payload = {"chat_id": TELEGRAM_USER_ID}
+        files = {"photo": photo}
+        try:
+            requests.post(url, data=payload, files=files, timeout=10)
+        except Exception as e:
+            print(f"Failed to send Telegram screenshot: {e}")
+
+
+def is_proxy_valid(proxy):
+    try:
+        proxies = {
+            "http": f"http://{proxy}",
+            "https": f"http://{proxy}"
+        }
+        resp = requests.get("https://www.tiktok.com", proxies=proxies, timeout=10)
+        if "India" in resp.text or "IN" in resp.text:
+            return False
+        return resp.status_code == 200
     except:
         return False
 
-def get_proxies_from_file(file_path="proxy.txt"):
-    if not os.path.exists(file_path):
+
+def get_working_proxies():
+    if not os.path.exists(PROXY_FILE):
         return []
-    with open(file_path, "r") as f:
-        return [line.strip() for line in f if line.strip()]
 
-def get_videos_from_user(username, proxy=None):
-    print(f"Scraping videos for user: {username}")
-    with sync_playwright() as p:
-        browser_args = ["--no-sandbox"]
-        proxy_config = {}
+    with open(PROXY_FILE, "r") as f:
+        proxies = [line.strip() for line in f if line.strip()]
 
-        if proxy:
-            proxy_type, host, port, username_, password = extract_proxy_parts(proxy)
-            server = f"{proxy_type}://{host}:{port}"
-            proxy_config = {
-                "server": server
-            }
-            if username_ and password:
-                proxy_config["username"] = username_
-                proxy_config["password"] = password
-            print(f"Using proxy: {server}")
+    valid = []
+    for proxy in proxies:
+        print(f"Checking proxy: {proxy}")
+        if is_proxy_valid(proxy):
+            print(f"✅ Valid proxy: {proxy}")
+            valid.append(proxy)
+        else:
+            print(f"❌ Invalid or Indian proxy: {proxy}")
+    return valid
 
-        browser = p.chromium.launch(proxy=proxy_config or None, headless=True, args=browser_args)
-        context = browser.new_context()
-        page = context.new_page()
 
-        try:
-            page.goto(f"https://www.tiktok.com/@{username}", timeout=60000)
-            page.wait_for_selector("div[data-e2e=feed-item]", timeout=10000)
-
-            elements = page.query_selector_all("div[data-e2e=feed-item]")
-            videos = []
-
-            for el in elements:
-                link_el = el.query_selector("a")
-                href = link_el.get_attribute("href") if link_el else None
-                if href and "/video/" in href:
-                    video_id = href.split("/video/")[-1]
-                    likes_el = el.query_selector("strong[data-e2e=like-count]")
-                    likes = int(likes_el.inner_text().replace("K", "000").replace("M", "000000").replace(".", "")) if likes_el else 0
-                    videos.append({
-                        "id": video_id,
-                        "url": href,
-                        "likes": likes
-                    })
-            return videos
-
-        except Exception as e:
-            print(f"Error fetching videos from @{username}: {e}")
-            return []
-        finally:
-            browser.close()
+def get_random_proxy(proxies):
+    if not proxies:
+        return None
+    return random.choice(proxies)
