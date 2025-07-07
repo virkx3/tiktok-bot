@@ -1,38 +1,36 @@
-import json
 import os
+import json
 import re
-import socket
-import pytz
 import requests
-from datetime import datetime
-
-SHARED_DATA_FILE = "shared.json"
-
-def get_target_usernames():
-    return ["its.sahiba2233", "iamvirk"]
 
 def load_shared_data():
-    if not os.path.exists(SHARED_DATA_FILE):
+    if not os.path.exists("shared.json"):
         return {}
-    with open(SHARED_DATA_FILE, "r") as f:
+    with open("shared.json", "r") as f:
         return json.load(f)
 
 def save_shared_data(data):
-    with open(SHARED_DATA_FILE, "w") as f:
+    with open("shared.json", "w") as f:
         json.dump(data, f, indent=2)
 
-def has_been_shared(video_id):
-    data = load_shared_data()
-    return video_id in data
+def already_shared(video_id):
+    if not os.path.exists("shared.json"):
+        return False
+    with open("shared.json", "r") as f:
+        data = json.load(f)
+        return video_id in data
 
-def get_previous_share_count(video_id):
+def update_shared_count(video_id, count):
+    data = load_shared_data()
+    if video_id in data:
+        data[video_id] += count
+    else:
+        data[video_id] = count
+    save_shared_data(data)
+
+def get_shared_count(video_id):
     data = load_shared_data()
     return data.get(video_id, 0)
-
-def mark_as_shared(video_id, shares):
-    data = load_shared_data()
-    data[video_id] = shares
-    save_shared_data(data)
 
 def calculate_share_count(likes):
     if likes < 100:
@@ -44,40 +42,33 @@ def calculate_share_count(likes):
     else:
         return 150
 
-def get_timestamp():
-    return datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
+def get_target_usernames():
+    if not os.path.exists("targets.txt"):
+        return []
+    with open("targets.txt", "r") as f:
+        return [line.strip() for line in f if line.strip()]
 
-def save_screenshot(page, filename="error.png"):
-    return page.screenshot(path=filename)
-
-def get_video_id_from_url(url):
-    match = re.search(r'/video/(\d+)', url)
-    return match.group(1) if match else None
-
-def extract_proxy_parts(proxy):
-    proxy = proxy.strip()
-    match = re.match(r'(?:(\w+):\/\/)?(?:(\w+:\w+)@)?([^:]+):(\d+)', proxy)
+def extract_proxy_parts(proxy_line):
+    match = re.match(r'(?:(\w+):\/\/)?(?:(\w+):(\w+)@)?([\w\.-]+):(\d+)', proxy_line)
     if not match:
         return None
-    scheme, auth, host, port = match.groups()
-    return {
-        "scheme": scheme or "http",
-        "auth": auth,
-        "host": host,
-        "port": int(port)
-    }
+    proxy_type = match.group(1) or 'socks5'
+    username = match.group(2)
+    password = match.group(3)
+    host = match.group(4)
+    port = match.group(5)
+    return proxy_type, host, port, username, password
 
 def is_indian_proxy(ip):
     try:
-        response = requests.get(f"https://ipapi.co/{ip}/country/", timeout=5)
-        return response.status_code == 200 and response.text.strip() == "IN"
+        res = requests.get(f"http://ip-api.com/json/{ip}", timeout=5)
+        data = res.json()
+        return data.get("country", "").lower() == "india"
     except:
         return False
 
-def get_videos_from_user(user_videos, already_shared):
-    results = []
-    for video in user_videos:
-        video_id = video["id"]
-        if video_id not in already_shared:
-            results.append(video)
-    return results
+def get_proxies_from_file(file_path="proxy.txt"):
+    if not os.path.exists(file_path):
+        return []
+    with open(file_path, "r") as f:
+        return [line.strip() for line in f if line.strip()]
