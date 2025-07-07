@@ -1,84 +1,96 @@
-import json
-import time
-from playwright.sync_api import sync_playwright
+import asyncio
+import traceback
+from playwright.async_api import async_playwright
+from telegram_logger import send_telegram_message, send_telegram_photo
+from config import TARGET_USERNAMES, CHECK_INTERVAL
 from utils import (
-    get_target_usernames,
-    load_shared_counts,
-    save_shared_counts,
+    get_videos_from_user,
     calculate_share_count,
-    get_video_urls,
+    already_shared,
+    mark_as_shared,
+    save_screenshot,
+    get_target_usernames,
 )
 from proxy_handler import get_valid_proxy
-from telegram_logger import send_telegram_message, send_telegram_screenshot
 
 
-def share_video(page, video_url, count):
-    try:
-        page.goto(video_url, timeout=60000)
-        time.sleep(5)
-        for _ in range(count):
-            try:
-                page.click('button[aria-label="Share"]')
-                time.sleep(1)
-            except:
-                continue
-        return True
-    except Exception as e:
-        return False
+async def share_video(video_url, share_count, page):
+    for _ in range(share_count):
+        try:
+            await page.goto(video_url, timeout=60000)
+            await asyncio.sleep(3)
+            print(f"✅ Shared {video_url}")
+        except Exception as e:
+            print(f"⚠️ Failed to share {video_url}: {e}")
+            continue
 
 
-def scrape():
-    shared_counts = load_shared_counts()
-    usernames = get_target_usernames()
-
-    with sync_playwright() as p:
-        for username in usernames:
+async def scrape():
+    while True:
+        try:
             proxy = get_valid_proxy()
             if proxy:
-                proxy_config = {
-                    "server": f"{proxy['ip']}:{proxy['port']}",
-                    "username": proxy.get("username"),
-                    "password": proxy.get("password"),
-                }
+                print(f"🌐 Using proxy: {proxy}")
+                if "@" in proxy:
+                    creds, proxy_url = proxy.split("@")
+                    proxy_username, proxy_password = creds.split(":")
+                    proxy_url = "socks5://" + proxy_url
+                else:
+                    proxy_username = proxy_password = None
+                    proxy_url = "socks5://" + proxy
+
+                proxy_config = {"server": proxy_url}
+                if proxy_username and proxy_password:
+                    proxy_config["username"] = str(proxy_username)
+                    proxy_config["password"] = str(proxy_password)
             else:
-                proxy_config = None
+                print("🛑 No valid proxy found. Retrying in 1 minute...")
+                await asyncio.sleep(60)
+                continue
 
-            browser = p.chromium.launch(proxy=proxy_config, headless=True)
-            context = browser.new_context()
-            page = context.new_page()
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True, proxy=proxy_config if proxy else None)
+                context = await browser.new_context()
+                page = await context.new_page()
 
-            try:
-                video_urls = get_video_urls(page, username)
-                for url in video_urls:
-                    page.goto(url, timeout=60000)
-                    time.sleep(3)
-                    content = page.content()
-
+                usernames = get_target_usernames()
+                for username in usernames:
                     try:
-                        like_text = page.locator('[data-e2e="like-count"]').inner_text()
-                        likes = int(like_text.replace('K', '000').replace('.', ''))
-                    except:
-                        likes = 0
+                        print(f"🔍 Checking user: {username}")
+                        videos = await get_videos_from_user(page, username)
+                        for video in videos:
+                            if already_shared(video["id"]):
+                                continue
 
-                    if url not in shared_counts:
-                        shared_counts[url] = 0
+                            share_count = calculate_share_count(video["likes"])
+                            if share_count == 0:
+                                continue
 
-                    new_share_count = calculate_share_count(likes)
-                    if new_share_count > shared_counts[url]:
-                        share_amount = new_share_count - shared_counts[url]
-                        send_telegram_message(f"📹 Sharing {share_amount} times for {url} ({likes} likes)")
-                        success = share_video(page, url, share_amount)
-                        if success:
-                            shared_counts[url] = new_share_count
-                        else:
-                            send_telegram_screenshot(page, f"❌ Failed to share video: {url}")
-                    else:
-                        print(f"No additional shares needed for {url}")
-            except Exception as e:
-                send_telegram_message(f"⚠️ Error scraping @{username}: {e}")
-                send_telegram_screenshot(page, "Error Screenshot")
-            finally:
-                context.close()
-                browser.close()
+                            await share_video(video["url"], share_count, page)
+                            mark_as_shared(video["id"])
 
-    save_shared_counts(shared_counts)
+                            msg = f"""
+🎯 Video Shared!
+👤 User: {username}
+❤️ Likes: {video['likes']}
+🔗 URL: {video['url']}
+📤 Shares: {share_count}
+                            """.strip()
+                            await send_telegram_message(msg)
+
+                    except Exception as user_error:
+                        error_text = f"⚠️ Error processing user {username}:\n{user_error}"
+                        print(error_text)
+                        screenshot_path = await save_screenshot(page, f"error_{username}.png")
+                        await send_telegram_message(error_text)
+                        await send_telegram_photo(screenshot_path)
+
+                await browser.close()
+
+        except Exception as e:
+            error_text = f"❌ Bot crashed with error:\n{traceback.format_exc()}"
+            print(error_text)
+            await send_telegram_message(error_text)
+
+        print(f"⏳ Waiting {CHECK_INTERVAL} seconds before next check...")
+        await asyncio.sleep(CHECK_INTERVAL)
