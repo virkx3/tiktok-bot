@@ -1,5 +1,4 @@
-playwright
-requests
-aiohttp
-certifi
+playwright==1.44.0
+requests==2.31.0
+aiohttp==3.9.5
 python-telegram-bot
