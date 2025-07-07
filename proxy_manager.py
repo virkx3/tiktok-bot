@@ -1,54 +1,28 @@
-import requests
+import aiohttp
+import asyncio
 import random
-from urllib.parse import urlparse
 
-VALID_PROXIES = []
-CURRENT_PROXY_INDEX = 0
-
-def load_proxies(filename='proxy.txt'):
-    with open(filename, 'r') as f:
-        proxies = [line.strip() for line in f if line.strip()]
-    return proxies
-
-def is_indian_proxy(ip):
+async def is_proxy_valid(proxy):
     try:
-        resp = requests.get(f'https://ipapi.co/{ip}/country/', timeout=5)
-        return resp.text.strip().upper() == 'IN'
-    except:
-        return True  # Treat as Indian or blocked
-
-def test_proxy(proxy):
-    ip = proxy.split(':')[0]
-    if is_indian_proxy(ip):
-        return False
-    try:
-        proxies = {
-            'http': f'http://{proxy}',
-            'https': f'http://{proxy}',
-        }
-        resp = requests.get('https://www.tiktok.com', proxies=proxies, timeout=10)
-        return 'tiktok' in resp.text.lower()
+        async with aiohttp.ClientSession() as session:
+            async with session.get('https://www.tiktok.com', proxy=f"http://{proxy}", timeout=10) as response:
+                if response.status == 200:
+                    ip_info = await session.get(f"http://ip-api.com/json/{proxy.split(':')[0]}")
+                    data = await ip_info.json()
+                    if data['countryCode'] != "IN":
+                        return True
     except:
         return False
+    return False
 
-def initialize_valid_proxies():
-    global VALID_PROXIES
-    proxies = load_proxies()
-    VALID_PROXIES = []
-    for proxy in proxies:
-        print(f"🔍 Testing proxy: {proxy}")
-        if test_proxy(proxy):
-            VALID_PROXIES.append(proxy)
-            print(f"✅ Proxy usable: {proxy}")
-        else:
-            print(f"❌ Proxy invalid or blocked: {proxy}")
-    if not VALID_PROXIES:
-        raise Exception("No working proxies available.")
+async def load_proxies():
+    with open("proxy.txt") as f:
+        raw_proxies = f.read().splitlines()
+    valid = []
+    for proxy in raw_proxies:
+        if await is_proxy_valid(proxy):
+            valid.append(proxy)
+    return valid
 
-def get_next_proxy():
-    global CURRENT_PROXY_INDEX
-    if not VALID_PROXIES:
-        initialize_valid_proxies()
-    proxy = VALID_PROXIES[CURRENT_PROXY_INDEX]
-    CURRENT_PROXY_INDEX = (CURRENT_PROXY_INDEX + 1) % len(VALID_PROXIES)
-    return proxy
+def get_random_proxy(valid_list):
+    return random.choice(valid_list) if valid_list else None
