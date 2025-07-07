@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+*.log
+*.sqlite3
+*.db
+.vscode/
+.idea/
+node_modules/
+*.zip
+*.tar
+*.tar.gz
+.DS_Store
