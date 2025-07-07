@@ -32,7 +32,7 @@ def already_shared(video_id: str) -> int:
         data = json.load(f)
     return data.get(video_id, 0)
 
-def mark_video_shared(video_id: str, count: int):
+def mark_as_shared(video_id: str, count: int):
     if os.path.exists("shared_videos.json"):
         with open("shared_videos.json", "r") as f:
             data = json.load(f)
