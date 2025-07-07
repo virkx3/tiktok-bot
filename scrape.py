@@ -1,4 +1,13 @@
-import asyncio from playwright.async_api import async_playwright from utils import read_targets, login, scrape_user_posts, share_post, get_previous_share_data, save_share_data
+import asyncio
+from playwright.async_api import async_playwright
+from utils import (
+    read_targets,
+    login,
+    scrape_user_posts,
+    share_post,
+    get_previous_share_data,
+    save_share_data,
+)
 
 USERNAME = "sociaixzl3s" PASSWORD = "Virksaab@12345"
 
