@@ -1,58 +1,65 @@
 import json
 import os
-import requests
-from playwright.sync_api import sync_playwright
+import re
+import time
+from playwright.sync_api import Page
+from urllib.parse import urlparse
+from config import TARGET_USERNAMES
 
 def get_target_usernames():
-    from config import TARGET_USERNAMES
     return TARGET_USERNAMES
 
-def calculate_share_count(likes, previous_shares):
+def calculate_share_count(likes: int) -> int:
     if likes < 100:
         return 0
-    elif 100 <= likes < 1000:
-        return max(0, 50 - previous_shares)
-    elif 1000 <= likes <= 5000:
-        return max(0, 100 - previous_shares)
+    elif likes < 1000:
+        return 50
+    elif likes < 5000:
+        return 100
     else:
-        return max(0, 150 - previous_shares)
+        return 150
 
-def read_previous_likes(file_path='likes.json'):
-    if not os.path.exists(file_path):
-        return {}
-    with open(file_path, 'r') as f:
-        return json.load(f)
+def get_video_id_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    path = parsed.path
+    match = re.search(r'/video/(\d+)', path)
+    return match.group(1) if match else ""
 
-def write_previous_likes(data, file_path='likes.json'):
-    with open(file_path, 'w') as f:
+def already_shared(video_id: str) -> int:
+    if not os.path.exists("shared_videos.json"):
+        return 0
+    with open("shared_videos.json", "r") as f:
+        data = json.load(f)
+    return data.get(video_id, 0)
+
+def mark_video_shared(video_id: str, count: int):
+    if os.path.exists("shared_videos.json"):
+        with open("shared_videos.json", "r") as f:
+            data = json.load(f)
+    else:
+        data = {}
+    data[video_id] = count
+    with open("shared_videos.json", "w") as f:
         json.dump(data, f, indent=2)
 
-def load_proxies(file_path='proxy.txt'):
-    if not os.path.exists(file_path):
-        return []
-    with open(file_path, 'r') as f:
-        proxies = [line.strip() for line in f if line.strip()]
-    return proxies
+def get_videos_from_user(page: Page, username: str) -> list:
+    print(f"📸 Fetching videos for @{username}")
+    page.goto(f"https://www.tiktok.com/@{username}", timeout=60000)
+    time.sleep(5)
+    page.mouse.wheel(0, 3000)
+    time.sleep(5)
 
-def filter_valid_proxies(proxy_list):
-    valid_proxies = []
-    with sync_playwright() as p:
-        for proxy in proxy_list:
-            try:
-                if proxy.startswith("socks5://"):
-                    proxy_config = {"server": proxy.replace("socks5://", ""), "username": "", "password": ""}
-                    browser = p.chromium.launch(proxy={"server": f"socks5://{proxy_config['server']}"})
-                elif proxy.startswith("http://") or proxy.startswith("https://"):
-                    browser = p.chromium.launch(proxy={"server": proxy})
-                else:
-                    continue
-
-                page = browser.new_page()
-                page.goto("https://www.tiktok.com", timeout=10000)
-                content = page.content()
-                if "India" not in content:
-                    valid_proxies.append(proxy)
-                browser.close()
-            except Exception:
+    video_elements = page.query_selector_all("a[href*='/video/']")
+    videos = []
+    for el in video_elements:
+        try:
+            url = el.get_attribute("href")
+            if not url or "/video/" not in url:
                 continue
-    return valid_proxies
+            likes_selector = el.query_selector("strong")
+            likes = int(likes_selector.inner_text().replace('K', '000').replace('.', '').replace('M', '000000')) if likes_selector else 0
+            videos.append({"url": url, "likes": likes})
+        except Exception as e:
+            print(f"⚠️ Error parsing video: {e}")
+            continue
+    return videos
