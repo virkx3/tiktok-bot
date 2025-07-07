@@ -6,61 +6,49 @@ from utils import (
     scrape_user_posts,
     share_post,
     get_previous_share_data,
-    save_share_data,
+    save_share_data
 )
 
-USERNAME = "sociaixzl3s" PASSWORD = "Virksaab@12345"
 
-async def process_targets(): targets = read_targets("target.txt")
+async def process_targets():
+    async with async_playwright() as p:
+        browser = await p.webkit.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
 
-async with async_playwright() as p:
-    browser = await p.chromium.launch(headless=True)
-    context = await browser.new_context()
-    page = await context.new_page()
+        await login(page)
 
-    # Login
-    print("Logging into TikTok...")
-    await login(page, USERNAME, PASSWORD)
+        targets = read_targets()
+        for username in targets:
+            print(f"\n[📥] Checking user: {username}")
+            posts = await scrape_user_posts(page, username)
+            for post in posts:
+                url = post["url"]
+                likes = post["likes"]
+                shares = post["shares"]
 
-    for username in targets:
-        print(f"\nProcessing {username}...")
-        posts = await scrape_user_posts(page, username)
+                if likes < 100:
+                    print(f"[⏭️] Skipping post {url} — Only {likes} likes.")
+                    continue
 
-        for post in posts:
-            video_id = post["id"]
-            likes = post["likes"]
-            shares = post["shares"]
+                previous_share = get_previous_share_data(url)
+                if previous_share is None:
+                    previous_share = 0
 
-            # Skip post if likes < 99
-            if likes < 99:
-                print(f"Skipping post {video_id} — only {likes} likes.")
-                continue
+                if 100 <= likes <= 999:
+                    min_share, max_share = 30, 50
+                elif 1000 <= likes <= 5000:
+                    min_share, max_share = 50, 100
+                else:
+                    min_share, max_share = 100, 150
 
-            previous_shares = get_previous_share_data(username, video_id)
+                total_required_share = max(min_share, max_share - previous_share)
+                if total_required_share <= 0:
+                    print(f"[✅] Already shared enough for {url}")
+                    continue
 
-            # Determine how many new shares to do
-            total_needed = 0
-            if 100 <= likes <= 999:
-                total_needed = 50
-            elif 1000 <= likes <= 5000:
-                total_needed = 100
-            elif likes > 5000:
-                total_needed = 150
+                print(f"[🚀] Sharing {url} — Target: {total_required_share} times (old: {previous_share})")
+                count = await share_post(page, url, total_required_share)
+                save_share_data(url, previous_share + count)
 
-            new_shares_needed = total_needed - previous_shares
-            if new_shares_needed <= 0:
-                print(f"Already shared enough for {video_id} ({previous_shares}/{total_needed})")
-                continue
-
-            print(f"Sharing post {video_id} {new_shares_needed} times...")
-            for _ in range(new_shares_needed):
-                await share_post(page, post["url"])
-                await asyncio.sleep(2)
-
-            save_share_data(username, video_id, total_needed)
-
-    await context.close()
-    await browser.close()
-
-if name == "main": asyncio.run(process_targets())
-
+        await browser.close()
