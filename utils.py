@@ -1,53 +1,51 @@
-import json
-import os
+# utils.py
+
+import re
+import geoip2.database
 import socket
-import requests
-from config import SHARED_COUNT_FILE, TARGET_USERNAMES
 
-def get_target_usernames():
-    return TARGET_USERNAMES
-
-def load_shared_counts():
-    if not os.path.exists(SHARED_COUNT_FILE):
-        return {}
-    with open(SHARED_COUNT_FILE, "r") as f:
-        return json.load(f)
-
-def save_shared_counts(counts):
-    with open(SHARED_COUNT_FILE, "w") as f:
-        json.dump(counts, f, indent=2)
-
-def calculate_share_count(likes):
-    if likes < 100:
+# Share logic based on like count
+def calculate_share_count(like_count, previous_share_count=0):
+    if like_count < 100:
         return 0
-    elif 100 <= likes < 1000:
-        return 50
-    elif 1000 <= likes <= 5000:
-        return 100
+    elif like_count < 1000:
+        return max(0, 50 - previous_share_count)
+    elif like_count < 5000:
+        return max(0, 100 - previous_share_count)
     else:
-        return 150
+        return max(0, 150 - previous_share_count)
 
-def get_video_urls(page, username):
-    profile_url = f"https://www.tiktok.com/@{username}"
-    page.goto(profile_url, timeout=60000)
-    page.wait_for_selector("a[href*='/video/']", timeout=10000)
-    anchors = page.query_selector_all("a[href*='/video/']")
-    urls = list({a.get_attribute("href") for a in anchors})
-    return urls[:5]  # Limit to top 5 videos for speed
+# Get target usernames (static for now, or from config)
+def get_target_usernames():
+    return ["its.sahiba2233", "iamvirk"]
 
-def is_valid_proxy(ip, port):
+# Check if proxy is from India using hostname (fallback-only heuristic)
+def is_indian_proxy(proxy):
     try:
-        s = socket.create_connection((ip, int(port)), timeout=3)
-        s.close()
-        return True
+        ip = proxy.split(":")[0]
+        # Optionally plug in MaxMind DB (if required) for more accurate GeoIP
+        if any(keyword in proxy.lower() for keyword in ['.in', 'india']):
+            return True
+        return False
     except:
         return False
 
-def get_country_from_proxy(ip):
-    try:
-        response = requests.get(f"https://ipapi.co/{ip}/country_name/", timeout=5)
-        if response.status_code == 200:
-            return response.text.strip()
-    except:
-        pass
-    return "Unknown"
+# Extract proxy parts for Playwright
+def extract_proxy_parts(proxy):
+    """
+    Returns dict for playwright like:
+    {
+        "server": "ip:port",
+        "username": "user",
+        "password": "pass"
+    }
+    """
+    match = re.match(r"(?:(?P<username>[^:@]+):(?P<password>[^@]+)@)?(?P<ip>[^:]+):(?P<port>\d+)", proxy)
+    if not match:
+        return {"server": proxy}
+    parts = match.groupdict()
+    return {
+        "server": f"{parts['ip']}:{parts['port']}",
+        "username": parts.get("username"),
+        "password": parts.get("password")
+    }
