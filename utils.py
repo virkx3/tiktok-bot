@@ -1,51 +1,58 @@
-# utils.py
+import json
+import os
+import requests
+from playwright.sync_api import sync_playwright
 
-import re
-import geoip2.database
-import socket
-
-# Share logic based on like count
-def calculate_share_count(like_count, previous_share_count=0):
-    if like_count < 100:
-        return 0
-    elif like_count < 1000:
-        return max(0, 50 - previous_share_count)
-    elif like_count < 5000:
-        return max(0, 100 - previous_share_count)
-    else:
-        return max(0, 150 - previous_share_count)
-
-# Get target usernames (static for now, or from config)
 def get_target_usernames():
-    return ["its.sahiba2233", "iamvirk"]
+    from config import TARGET_USERNAMES
+    return TARGET_USERNAMES
 
-# Check if proxy is from India using hostname (fallback-only heuristic)
-def is_indian_proxy(proxy):
-    try:
-        ip = proxy.split(":")[0]
-        # Optionally plug in MaxMind DB (if required) for more accurate GeoIP
-        if any(keyword in proxy.lower() for keyword in ['.in', 'india']):
-            return True
-        return False
-    except:
-        return False
+def calculate_share_count(likes, previous_shares):
+    if likes < 100:
+        return 0
+    elif 100 <= likes < 1000:
+        return max(0, 50 - previous_shares)
+    elif 1000 <= likes <= 5000:
+        return max(0, 100 - previous_shares)
+    else:
+        return max(0, 150 - previous_shares)
 
-# Extract proxy parts for Playwright
-def extract_proxy_parts(proxy):
-    """
-    Returns dict for playwright like:
-    {
-        "server": "ip:port",
-        "username": "user",
-        "password": "pass"
-    }
-    """
-    match = re.match(r"(?:(?P<username>[^:@]+):(?P<password>[^@]+)@)?(?P<ip>[^:]+):(?P<port>\d+)", proxy)
-    if not match:
-        return {"server": proxy}
-    parts = match.groupdict()
-    return {
-        "server": f"{parts['ip']}:{parts['port']}",
-        "username": parts.get("username"),
-        "password": parts.get("password")
-    }
+def read_previous_likes(file_path='likes.json'):
+    if not os.path.exists(file_path):
+        return {}
+    with open(file_path, 'r') as f:
+        return json.load(f)
+
+def write_previous_likes(data, file_path='likes.json'):
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def load_proxies(file_path='proxy.txt'):
+    if not os.path.exists(file_path):
+        return []
+    with open(file_path, 'r') as f:
+        proxies = [line.strip() for line in f if line.strip()]
+    return proxies
+
+def filter_valid_proxies(proxy_list):
+    valid_proxies = []
+    with sync_playwright() as p:
+        for proxy in proxy_list:
+            try:
+                if proxy.startswith("socks5://"):
+                    proxy_config = {"server": proxy.replace("socks5://", ""), "username": "", "password": ""}
+                    browser = p.chromium.launch(proxy={"server": f"socks5://{proxy_config['server']}"})
+                elif proxy.startswith("http://") or proxy.startswith("https://"):
+                    browser = p.chromium.launch(proxy={"server": proxy})
+                else:
+                    continue
+
+                page = browser.new_page()
+                page.goto("https://www.tiktok.com", timeout=10000)
+                content = page.content()
+                if "India" not in content:
+                    valid_proxies.append(proxy)
+                browser.close()
+            except Exception:
+                continue
+    return valid_proxies
