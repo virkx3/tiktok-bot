@@ -1,30 +1,26 @@
 import requests
-import os
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_USER_ID
 
-# These are set from your bot token and Telegram user ID
-BOT_TOKEN = "7596985533:AAHjRG1gvHkm2bM6oSJtgOMffHSM8TcgQkw"
-USER_ID = "1098100073"
-
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+def send_telegram_message(message: str):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": USER_ID,
+        "chat_id": TELEGRAM_USER_ID,
         "text": message,
-        "parse_mode": "Markdown"
+        "parse_mode": "HTML",
     }
     try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception:
-        pass
+        response = requests.post(url, data=payload, timeout=10)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"⚠️ Failed to send Telegram message: {e}")
 
-def send_telegram_screenshot(page, caption="Screenshot"):
+def send_telegram_photo(photo_path: str, caption: str = ""):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     try:
-        page.screenshot(path="error.png", full_page=True)
-        with open("error.png", "rb") as f:
-            files = {"photo": f}
-            data = {"chat_id": USER_ID, "caption": caption}
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-            requests.post(url, data=data, files=files, timeout=20)
-        os.remove("error.png")
-    except Exception:
-        pass
+        with open(photo_path, "rb") as photo:
+            files = {"photo": photo}
+            data = {"chat_id": TELEGRAM_USER_ID, "caption": caption}
+            response = requests.post(url, files=files, data=data, timeout=10)
+            response.raise_for_status()
+    except Exception as e:
+        print(f"⚠️ Failed to send Telegram photo: {e}")
