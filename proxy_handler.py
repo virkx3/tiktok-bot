@@ -1,31 +1,37 @@
-# proxy_handler.py
-
 import random
 import requests
 from config import PROXY_LIST_PATH
+from utils import is_valid_proxy, get_country_from_proxy
 
-def is_proxy_valid(proxy: str) -> bool:
+
+def load_proxies():
     try:
-        proxies = {
-            "http": f"http://{proxy}",
-            "https": f"http://{proxy}",
-        }
-        response = requests.get("https://www.tiktok.com", proxies=proxies, timeout=10)
-        if "India" in response.text:
-            return False
-        return response.status_code == 200
-    except Exception:
-        return False
+        with open(PROXY_LIST_PATH, "r") as f:
+            lines = f.read().splitlines()
+            proxies = []
+            for line in lines:
+                if line.startswith("#") or not line.strip():
+                    continue
+                parts = line.strip().split(":")
+                if len(parts) == 2:
+                    ip, port = parts
+                    proxies.append({"ip": ip, "port": port})
+                elif len(parts) == 4:
+                    ip, port, username, password = parts
+                    proxies.append({"ip": ip, "port": port, "username": username, "password": password})
+            return proxies
+    except Exception as e:
+        return []
 
-def load_proxies() -> list:
-    with open(PROXY_LIST_PATH, "r") as f:
-        proxies = [line.strip() for line in f if line.strip()]
-    return proxies
 
-def get_valid_proxy() -> str | None:
+def get_valid_proxy():
     proxies = load_proxies()
     random.shuffle(proxies)
     for proxy in proxies:
-        if is_proxy_valid(proxy):
-            return proxy
+        if not is_valid_proxy(proxy["ip"], proxy["port"]):
+            continue
+        country = get_country_from_proxy(proxy["ip"])
+        if country.lower() == "india":
+            continue
+        return proxy
     return None
