@@ -1,28 +1,29 @@
 # config.py
 
-# Telegram Configuration
+# Telegram credentials
 TELEGRAM_BOT_TOKEN = "7596985533:AAHjRG1gvHkm2bM6oSJtgOMffHSM8TcgQkw"
-TELEGRAM_USER_ID = "1098100073"
+TELEGRAM_USER_ID = 1098100073
 
-# TikTok Targets
-TIKTOK_USERNAMES = ["its.sahiba2233", "iamvirk"]
+# TikTok login
+TIKTOK_USERNAME = "sociaixzl3s"
+TIKTOK_PASSWORD = "Virksaab@12345"
 
-# Share Strategy
-SHARE_STRATEGY = [
-    {"min_likes": 0, "max_likes": 99, "shares": 0},
-    {"min_likes": 100, "max_likes": 999, "shares": 50},
-    {"min_likes": 1000, "max_likes": 5000, "shares": 100},
-    {"min_likes": 5001, "max_likes": float("inf"), "shares": 150},
+# Target usernames
+TARGET_USERNAMES = [
+    "its.sahiba2233",
+    "iamvirk"
 ]
 
-# Time interval for rechecking (in seconds)
-RECHECK_INTERVAL = 2 * 60 * 60  # 2 hours
+# Proxy list path (local file)
+PROXY_LIST_PATH = "proxy.txt"
 
-# Proxy file path
-PROXY_FILE = "proxy.txt"
+# Recheck interval (in hours)
+RECHECK_INTERVAL_HOURS = 2
 
-# Log file
-LOG_FILE = "log.txt"
-
-# Timeouts
-PROXY_TEST_TIMEOUT = 10
+# Share thresholds
+SHARE_RULES = [
+    (0, 100, 0),
+    (100, 1000, 50),
+    (1000, 5000, 100),
+    (5000, float("inf"), 150),
+]
