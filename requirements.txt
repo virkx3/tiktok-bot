@@ -1,4 +1,5 @@
 playwright
-aiohttp
-python-telegram-bot
 requests
+aiohttp
+certifi
+python-telegram-bot
