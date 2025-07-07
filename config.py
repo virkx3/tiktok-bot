@@ -4,16 +4,16 @@
 TELEGRAM_BOT_TOKEN = "7596985533:AAHjRG1gvHkm2bM6oSJtgOMffHSM8TcgQkw"
 TELEGRAM_USER_ID = "1098100073"
 
-# Path to your proxy list file
+# Proxy list file
 PROXY_LIST_PATH = "proxy.txt"
 
-# Recheck interval (in seconds) – 2 hours
-RECHECK_INTERVAL = 2 * 60 * 60
+# Time interval to recheck videos (in seconds) – 2 hours
+CHECK_INTERVAL = 2 * 60 * 60
 
-# TikTok target usernames
+# Target TikTok usernames
 TARGET_USERNAMES = ["its.sahiba2233", "iamvirk"]
 
-# Like-based share strategy
+# Share strategy based on like count
 def calculate_share_count(likes: int) -> int:
     if likes < 100:
         return 0
